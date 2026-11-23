@@ -29,7 +29,7 @@ export function mount(el, { db, fs }) {
   }));
   unsubs.push(fs.onSnapshot(fs.collection(db, "players"), s => { players = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); }));
   unsubs.push(fs.onSnapshot(col("results"), s => { results = {}; s.docs.forEach(d => results[d.id] = d.data()); render(); }));
-  unsubs.push(fs.onSnapshot(col("scores"), s => { scores = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); }));
+  unsubs.push(fs.onSnapshot(fs.doc(db, ...ROOM, "board", "current"), s => { scores = s.exists() ? s.data().rows || [] : []; render(); }));
 
   function watchAnswers(q) {
     if (ansQ === q && ansUnsub) return;
@@ -62,7 +62,7 @@ export function mount(el, { db, fs }) {
     const all = { ...results, [room.q]: { marks } };
     const b = fs.writeBatch(db);
     b.set(fs.doc(db, ...ROOM, "results", String(room.q)), { marks });
-    writeTotals(b, all);
+    writeTotals(b, all, room.q);
     b.update(roomRef, { phase: "reveal" });
     await b.commit();
   }
@@ -73,11 +73,12 @@ export function mount(el, { db, fs }) {
     m.ok = !m.ok; m.pts = m.ok ? m.ifOk : 0;
     const b = fs.writeBatch(db);
     b.set(fs.doc(db, ...ROOM, "results", key), { marks });
-    writeTotals(b, { ...results, [key]: { marks } });
+    writeTotals(b, { ...results, [key]: { marks } }, room.q);
     await b.commit();
   }
-  // 모든 문제 결과를 합쳐 참가자별 합계를 다시 씀
-  function writeTotals(b, all) {
+  // 모든 문제 결과를 합쳐 순위표 문서 하나(board/current)에 씀.
+  // 참가자 50명이 문서 하나만 구독하면 되어 Firestore 무료 읽기 한도(하루 5만)를 넉넉히 지킴.
+  function writeTotals(b, all, q) {
     const tot = {};
     players.forEach(p => tot[p.id] = { nick: p.nick, score: 0, correct: 0, timeMs: 0 });
     for (const r of Object.values(all)) {
@@ -87,7 +88,10 @@ export function mount(el, { db, fs }) {
         if (m.ok) { tot[pid].correct++; tot[pid].timeMs += m.t || 0; }
       }
     }
-    for (const [pid, t] of Object.entries(tot)) b.set(fs.doc(db, ...ROOM, "scores", pid), t);
+    const last = all[q]?.marks || {};
+    const rows = ranked(Object.entries(tot).map(([id, t]) => ({ id, ...t })))
+      .map(r => ({ ...r, timeMs: r.timeMs, lastOk: !!last[r.id]?.ok, lastPts: last[r.id]?.pts || 0, answered: !!last[r.id] }));
+    b.set(fs.doc(db, ...ROOM, "board", "current"), { q, rows });
   }
   async function next() {
     if (room.q < QUESTIONS.length - 1) await startQ(room.q + 1);
@@ -97,7 +101,7 @@ export function mount(el, { db, fs }) {
     if (!resetArmed) { resetArmed = true; render(); setTimeout(() => { resetArmed = false; render(); }, 5000); return; }
     resetArmed = false;
     const b = fs.writeBatch(db);
-    for (const name of ["answers", "results", "scores"]) {
+    for (const name of ["answers", "results", "board"]) {
       (await fs.getDocs(col(name))).docs.forEach(d => b.delete(d.ref));
     }
     b.set(roomRef, { phase: "lobby", q: 0, startedAt: null, hintAt: null, duration: DURATION_MS });

@@ -1,12 +1,12 @@
 // 이모지 퀴즈 참가자 화면 (휴대폰)
 import { QUESTIONS, LVL_NAME, DURATION_MS, chosung } from "./questions.js";
-import { ROOM, loadStyle, esc, ranked } from "./common.js";
+import { ROOM, loadStyle, esc } from "./common.js";
 import { ms } from "../../shared/db.js";
 
 export function mount(el, { db, fs, player }) {
   loadStyle();
   const roomRef = fs.doc(db, ...ROOM);
-  let room = null, myAnswer = null, results = {}, scores = [], tick = null, ansUnsub = null, ansQ = null;
+  let room = null, myAnswer = null, board = null, scores = [], tick = null, ansUnsub = null, ansQ = null;
   let drawnKey = null;
   const unsubs = [];
 
@@ -14,8 +14,8 @@ export function mount(el, { db, fs, player }) {
   const root = el.querySelector("#ep");
 
   unsubs.push(fs.onSnapshot(roomRef, s => { room = s.exists() ? s.data() : null; watchMine(); render(); }));
-  unsubs.push(fs.onSnapshot(fs.collection(db, ...ROOM, "results"), s => { results = {}; s.docs.forEach(d => results[d.id] = d.data()); render(); }));
-  unsubs.push(fs.onSnapshot(fs.collection(db, ...ROOM, "scores"), s => { scores = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); }));
+  // 순위표는 운영자가 쓰는 문서 하나(board/current)만 구독. 내 이번 문제 결과도 여기 들어 있음.
+  unsubs.push(fs.onSnapshot(fs.doc(db, ...ROOM, "board", "current"), s => { board = s.exists() ? s.data() : null; scores = board?.rows || []; render(); }));
 
   function watchMine() {
     if (!room || ansQ === room.q) return;
@@ -64,9 +64,13 @@ export function mount(el, { db, fs, player }) {
       tick = setInterval(renderTimer, 250); renderTimer(); renderSent();
     }
 
+    else if (room.phase === "reveal" && board?.q !== room.q) {
+      root.innerHTML = `<div class="ep-result"><p class="muted">채점 중…</p></div>`;
+    }
+
     else if (room.phase === "reveal") {
-      const m = results[room.q]?.marks?.[player.id];
-      const me = ranked(scores).find(r => r.id === player.id);
+      const me = board?.q === room.q ? scores.find(r => r.id === player.id) : null;
+      const m = me && me.answered ? { ok: me.lastOk, pts: me.lastPts } : null;
       root.innerHTML = `<div class="ep-result">
         ${m ? (m.ok ? `<p class="ep-big ok">정답! +${m.pts}</p>` : `<p class="ep-big no">아쉬워요</p>`) : `<p class="ep-big no">답을 못 냈어요</p>`}
         <p class="muted" style="margin:0">정답</p>
@@ -79,7 +83,7 @@ export function mount(el, { db, fs, player }) {
     }
 
     else if (room.phase === "final") {
-      const r = ranked(scores), me = r.find(x => x.id === player.id);
+      const r = scores, me = r.find(x => x.id === player.id);
       const top = me && me.rank <= 3;
       root.innerHTML = `<div class="ep-result">
         <div class="emoji" style="font-size:3.4rem" aria-hidden="true">${top ? ["🥇", "🥈", "🥉"][me.rank - 1] : "🎉"}</div>
