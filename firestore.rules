@@ -1,0 +1,68 @@
+rules_version = '2';
+// 송년회 퀴즈용 규칙. 모든 접속자는 익명 로그인을 합니다.
+// 참가자 문서 players/{pid} 는 uid 필드로 지금 그 참가자를 쓰는 브라우저를 가리킵니다.
+// 다른 브라우저에서 같은 이름 + 같은 숫자 4자리를 넣으면 uid 를 바꿔 점수를 이어받습니다.
+// 진행 상태(rooms/*, winners/*)는 로그인한 누구나 쓸 수 있습니다. 하루짜리 사내 행사라 운영자 계정 구분은 두지 않았습니다.
+service cloud.firestore {
+  match /databases/{db}/documents {
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function ownsPlayer(pid) { return get(/databases/$(db)/documents/players/$(pid)).data.uid == me(); }
+
+    match /players/{pid} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == me()
+        && request.resource.data.nick is string && request.resource.data.nick.size() <= 20;
+      // 이어받기: 이름은 그대로, uid 만 나로 바꿈. 내가 먼저 써 둔 claims/{내 uid} 의 숫자가 pins/{pid} 와 같아야 함.
+      allow update: if signedIn()
+        && request.resource.data.nick == resource.data.nick
+        && request.resource.data.uid == me()
+        && (resource.data.uid == me()
+            || (get(/databases/$(db)/documents/claims/$(me())).data.pid == pid
+                && get(/databases/$(db)/documents/claims/$(me())).data.pin == get(/databases/$(db)/documents/pins/$(pid)).data.pin));
+      allow delete: if signedIn();
+    }
+    // 숫자 4자리. 아무도 읽을 수 없고, 참가자 본인이 처음 한 번만 씀.
+    match /pins/{pid} {
+      allow read: if false;
+      allow create: if signedIn() && ownsPlayer(pid)
+        && request.resource.data.pin is string && request.resource.data.pin.matches('^[0-9]{4}$');
+      allow update: if false;
+      allow delete: if signedIn();
+    }
+    // 이어받기 시도. 본인만 읽고 씀.
+    match /claims/{uid} {
+      allow read, write: if signedIn() && uid == me();
+    }
+    // 게임별 확정 우승자. 한 사람이 두 게임 우승을 받지 않도록 서로 확인합니다.
+    match /winners/{gameId} {
+      allow read, write: if signedIn();
+    }
+    // 이모지 퀴즈 답안: 문서 id 는 {문제번호}_{참가자 id}, 그 참가자를 지금 쓰는 사람만 씀
+    match /rooms/emoji/answers/{aid} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && ownsPlayer(request.resource.data.pid)
+        && aid == string(request.resource.data.q) + "_" + request.resource.data.pid
+        && request.resource.data.text is string && request.resource.data.text.size() <= 60;
+      allow delete: if signedIn();
+    }
+    // 단어 온도계 추측: 그 참가자를 지금 쓰는 사람만 씀
+    match /rooms/similar/guesses/{gid} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && ownsPlayer(request.resource.data.pid)
+        && request.resource.data.round is int
+        && request.resource.data.word is string && request.resource.data.word.size() <= 20;
+      allow delete: if signedIn();
+    }
+    // 그 밖의 게임 상태 (운영자 화면이 씀)
+    match /rooms/{room} {
+      allow read, write: if signedIn();
+    }
+    match /rooms/{room}/{sub}/{docId} {
+      allow read: if signedIn();
+      allow write: if signedIn() && !(room == "emoji" && sub == "answers") && !(room == "similar" && sub == "guesses");
+    }
+  }
+}

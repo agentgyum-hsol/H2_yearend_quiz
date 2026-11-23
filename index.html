@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>송년회 퀴즈</title>
+<link rel="stylesheet" href="shared/ui.css">
+<style>
+  body { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 20px; text-align: center; }
+  h1 { margin: 0; font-family: var(--display); font-weight: 400; font-size: clamp(2.4rem, 8vw, 4.5rem); }
+  h1 span { color: var(--dancheong); }
+  .links { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+</style>
+</head>
+<body>
+  <h1>송년회 <span>퀴즈</span></h1>
+  <p class="muted">참가자는 '참가하기', 진행자는 '운영 화면'을 여세요.</p>
+  <div class="links">
+    <a class="btn primary" id="play" href="play/">참가하기</a>
+    <a class="btn" id="host" href="host/">운영 화면</a>
+  </div>
+  <script>
+    // ?mock=1 을 그대로 넘겨 줌
+    if (location.search) for (const id of ["play", "host"]) { const a = document.getElementById(id); a.href += location.search; }
+  </script>
+</body>
+</html>

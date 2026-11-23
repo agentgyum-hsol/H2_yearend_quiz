@@ -1,0 +1,104 @@
+/* 이모지 퀴즈 화면 (운영자 .eh, 참가자 .ep) */
+.eh { flex: 1; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.eh-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.eh-top .meta { display: flex; gap: 8px; flex-wrap: wrap; }
+.pill.lvl-1 { color: var(--pine); border-color: color-mix(in srgb, var(--pine) 50%, transparent); }
+.pill.lvl-2 { color: var(--gold); border-color: color-mix(in srgb, var(--gold) 50%, transparent); }
+.pill.lvl-3 { color: var(--dancheong); border-color: color-mix(in srgb, var(--dancheong) 50%, transparent); }
+.eh-progress { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.eh-progress i { display: block; height: 100%; background: var(--dancheong); transition: width .3s ease; }
+.eh-stage {
+  flex: 1; min-height: 0; background: var(--night-2); border-radius: 20px;
+  display: flex; flex-direction: column; align-items: center; justify-content: safe center; overflow: auto;
+  gap: clamp(12px, 2.6vh, 28px); padding: clamp(16px, 3.5vh, 40px) 16px; text-align: center;
+}
+.eh-emoji { font-family: var(--emoji); font-size: clamp(2.6rem, min(10vw, 12vh), 8rem); line-height: 1.15; max-width: 100%; overflow-wrap: anywhere; }
+.eh-emoji span { display: block; }
+.eh-row { display: flex; gap: 22px; align-items: baseline; justify-content: center; flex-wrap: wrap; }
+.eh-timer { font-family: var(--mono); font-size: clamp(1.4rem, 3.4vw, 2.4rem); font-variant-numeric: tabular-nums; color: var(--muted); }
+.eh-timer.warn { color: var(--gold); }
+.eh-timer.over { color: var(--dancheong); }
+.eh-count { font-family: var(--mono); font-size: clamp(1.1rem, 2.4vw, 1.6rem); color: var(--muted); }
+.eh-count b { color: var(--paper); font-weight: 600; }
+.eh-hint { font-family: var(--display); font-size: clamp(1.6rem, 4.4vw, 3rem); letter-spacing: .25em; color: var(--gold); }
+.eh-hint small { display: block; font-family: var(--body); font-size: .9rem; letter-spacing: .05em; color: var(--muted); }
+.eh-answer { margin: 0; font-family: var(--display); font-weight: 400; font-size: clamp(2rem, 5.6vw, 4rem); color: var(--pine); line-height: 1.15; text-wrap: balance; animation: eh-pop .45s cubic-bezier(.2,1.4,.4,1); }
+.eh-decode { color: var(--muted); }
+.eh-mean { color: var(--muted); max-width: 60ch; margin: 0; font-size: 1.1rem; }
+@keyframes eh-pop { from { transform: scale(.85); opacity: 0; } to { transform: none; opacity: 1; } }
+.eh-controls { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.eh-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+@media (max-width: 860px) { .eh-split { grid-template-columns: 1fr; } }
+.eh-board { display: flex; flex-direction: column; gap: 4px; }
+.eh-board div { display: grid; grid-template-columns: 2.4em minmax(0, 1fr) auto; gap: 10px; padding: 6px 4px; border-bottom: 1px solid var(--line); align-items: baseline; }
+.eh-board .r { font-family: var(--mono); color: var(--muted); }
+.eh-board .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.eh-board .s { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.eh-board div:first-child .n, .eh-board div:first-child .s { color: var(--gold); }
+.eh-list { max-height: 34vh; overflow: auto; display: flex; flex-direction: column; gap: 4px; }
+.eh-ans { display: grid; grid-template-columns: auto minmax(0, 7em) minmax(0, 1fr) auto; gap: 10px; align-items: center; text-align: left; padding: 4px 2px; border-bottom: 1px solid var(--line); }
+.eh-ans .nick { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.eh-ans .txt { overflow-wrap: anywhere; }
+.eh-ans button { border: 1px solid var(--line); background: transparent; border-radius: 8px; width: 34px; height: 30px; }
+.eh-ans button.ok { border-color: var(--pine); color: var(--pine); }
+.eh-ans button.no { border-color: var(--dancheong); color: var(--dancheong); }
+.eh-ans .pts { font-family: var(--mono); color: var(--muted); }
+.eh-podium { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: end; width: min(720px, 100%); }
+.eh-podium > div { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.eh-podium .bar { width: 100%; border-radius: 12px 12px 0 0; background: var(--line); display: flex; align-items: flex-start; justify-content: center; padding-top: 10px; font-family: var(--display); font-size: 2rem; }
+.eh-podium .p1 .bar { height: 160px; background: var(--gold); color: #1b1b1b; }
+.eh-podium .p2 .bar { height: 110px; }
+.eh-podium .p3 .bar { height: 80px; }
+.eh-podium .nm { font-family: var(--display); font-size: clamp(1.2rem, 3vw, 2rem); overflow-wrap: anywhere; }
+.eh-podium .sc { font-family: var(--mono); color: var(--muted); }
+.eh-title { margin: 0; font-family: var(--display); font-weight: 400; font-size: clamp(2.4rem, 7vw, 5.5rem); line-height: 1.05; }
+.eh-title span { color: var(--dancheong); }
+.eh-note { color: var(--muted); font-size: .9rem; }
+
+/* 참가자 */
+.ep { flex: 1; display: flex; flex-direction: column; gap: 14px; text-align: center; }
+.ep-meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.ep-emoji { font-family: var(--emoji); font-size: clamp(2.6rem, 15vw, 4.6rem); line-height: 1.2; background: var(--night-2); border-radius: 18px; padding: 14px 8px; }
+.ep-emoji span { display: block; }
+.ep-timer { font-family: var(--mono); font-size: 1.3rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ep-timer.warn { color: var(--gold); }
+.ep-timer.over { color: var(--dancheong); }
+.ep-hint { font-family: var(--display); font-size: 1.6rem; letter-spacing: .2em; color: var(--gold); }
+.ep form { display: flex; flex-direction: column; gap: 10px; }
+.ep-sent { color: var(--pine); min-height: 1.4em; }
+.ep-big { font-family: var(--display); font-size: 2.2rem; margin: 0; line-height: 1.15; }
+.ep-big.ok { color: var(--pine); }
+.ep-big.no { color: var(--dancheong); }
+.ep-result { display: flex; flex-direction: column; gap: 10px; align-items: center; justify-content: center; flex: 1; }
+.ep-stat { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; }
+.ep-stat div { background: var(--night-2); border-radius: 14px; padding: 12px; }
+.ep-stat b { display: block; font-family: var(--mono); font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+.ep-stat small { color: var(--muted); }
+
+/* 최종 1위 발표 */
+.eh-champ { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px 40px; border-radius: 20px; border: 2px dashed var(--line); min-width: min(520px, 100%); }
+.eh-champ .nm { font-family: var(--display); font-size: clamp(2.6rem, 8vw, 6rem); line-height: 1.05; overflow-wrap: anywhere; }
+.eh-champ .sc { font-family: var(--mono); color: var(--muted); }
+.eh-champ .emoji { font-size: 3rem; }
+.eh-champ.on { border: 2px solid var(--gold); background: color-mix(in srgb, var(--gold) 12%, transparent); animation: eh-pop .6s cubic-bezier(.2,1.4,.4,1); }
+.eh-champ.on .nm { color: var(--gold); }
+.eh-secret { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: 100%; min-height: 120px; }
+.eh-secret .emoji { font-size: 2.6rem; }
+.eh-secret b { font-size: 1.8rem; font-weight: 400; }
+
+/* 최종 발표 1~5위 */
+.eh-final { display: flex; flex-direction: column-reverse; gap: 8px; width: min(640px, 100%); }
+.eh-final-row { display: grid; grid-template-columns: 4em minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 6px 16px; border-radius: 14px; border: 1px dashed var(--line); color: var(--muted); }
+.eh-final-row .r { font-family: var(--mono); }
+.eh-final-row .n { font-family: var(--display); font-size: 1.6rem; text-align: left; overflow-wrap: anywhere; }
+.eh-final-row .n small { font-family: var(--body); font-size: .85rem; color: var(--dancheong); }
+.eh-final-row .s { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.eh-final-row.on { border-style: solid; color: var(--paper); animation: eh-pop .45s cubic-bezier(.2,1.4,.4,1); }
+.eh-final-row.first { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 12%, transparent); }
+.eh-final-row.first .n { color: var(--gold); font-size: 2.2rem; }
+.eh-final-row.skip .nn { text-decoration: line-through; text-decoration-color: var(--dancheong); }
+.eh-champ.on { padding: 10px 32px; }
+.eh-champ.on .nm { font-size: clamp(2.2rem, 6vw, 4.2rem); }
+.eh-champ.on { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 6px 18px; }
+.eh-final-row .n { font-size: 1.3rem; }
+.eh-final-row.first .n { font-size: 1.7rem; }

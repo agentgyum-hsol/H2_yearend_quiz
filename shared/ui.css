@@ -1,0 +1,71 @@
+/* 공통 화면 스타일. 프로젝터와 휴대폰 모두 어두운 단일 테마. 게임 모듈도 이 토큰을 씁니다. */
+@import url("https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gowun+Dodum&family=IBM+Plex+Mono:wght@500;600&display=swap");
+
+:root {
+  --night: #141a2e;
+  --night-2: #1d2540;
+  --line: #33406a;
+  --paper: #f3eee2;
+  --muted: #a9b0c8;
+  --dancheong: #e0483c;
+  --pine: #2fa37c;
+  --gold: #f2c14e;
+  --display: "Black Han Sans", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --body: "Gowun Dodum", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --emoji: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--night); color: var(--paper);
+  font-family: var(--body); font-size: 16px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: max(12px, env(safe-area-inset-top, 0px));
+  padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  overflow-x: hidden;
+}
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+.brand { font-family: var(--display); font-size: 1.3rem; }
+.brand span { color: var(--dancheong); }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.display { font-family: var(--display); font-weight: 400; }
+.emoji { font-family: var(--emoji); }
+
+.pill { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; font-family: var(--mono); font-size: .85rem; color: var(--muted); }
+.card { background: var(--night-2); border-radius: 18px; padding: 20px; }
+
+.btn {
+  border: 1px solid var(--line); background: transparent;
+  padding: 12px 20px; border-radius: 12px; font-size: 1.05rem;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+}
+.btn:hover { background: color-mix(in srgb, var(--line) 45%, transparent); }
+.btn.primary { background: var(--dancheong); border-color: var(--dancheong); color: #fff; }
+.btn.primary:hover { background: color-mix(in srgb, var(--dancheong) 85%, #000); }
+.btn.good { border-color: var(--pine); color: var(--pine); }
+.btn.warn { border-color: var(--gold); color: var(--gold); }
+.btn:disabled { opacity: .4; cursor: default; }
+.btn kbd { font-family: var(--mono); font-size: .75rem; color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+.btn.primary kbd { color: #ffe3df; border-color: #ff9d94; }
+
+.field {
+  width: 100%; background: var(--night); border: 1px solid var(--line); border-radius: 12px;
+  padding: 14px 16px; font-size: 1.15rem; color: var(--paper);
+}
+.field:focus { border-color: var(--gold); outline: none; }
+
+.mock-banner {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  background: var(--gold); color: #1b1b1b; text-align: center; font-size: .8rem;
+  padding: 4px 16px calc(4px + env(safe-area-inset-bottom, 0px));
+}
+
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
