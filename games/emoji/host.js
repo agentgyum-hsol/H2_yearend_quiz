@@ -20,7 +20,7 @@ export function mount(el, { db, fs }) {
   const unsubs = [];
 
   el.innerHTML = `<div class="eh">
-    <div class="eh-top"><div class="display" style="font-size:1.5rem">이게 내 <span style="color:var(--dancheong)">이모지</span>야</div><div class="meta" id="ehMeta"></div></div>
+    <div class="eh-top"><div class="display" style="font-size:1.5rem">제 <span style="color:var(--dancheong)">이모지</span>야👽</div><div class="meta" id="ehMeta"></div></div>
     <div class="eh-progress"><i id="ehBar" style="width:0%"></i></div>
     <div class="eh-stage" id="ehStage" aria-live="polite"></div>
     <div class="eh-controls" id="ehCtl"></div>
@@ -173,7 +173,7 @@ export function mount(el, { db, fs }) {
       $("ehMeta").innerHTML = `<span class="pill">${MAIN}문제</span><span class="pill">참가 ${players.length}명</span>`;
       $("ehStage").innerHTML = `
         <div class="emoji" style="font-size:clamp(2.4rem,7vw,4.5rem)" aria-hidden="true">🐋⚔️🐋 🦐💥</div>
-        <h1 class="eh-title">이게 내 <span>이모지</span>야</h1>
+        <h1 class="eh-title">제 <span>이모지</span>야👽</h1>
         <ul class="rules eh-mean">
           <li>이모지를 보고 어떤 속담인지 휴대폰에 써 주세요. 1인 1폰, 각자 풀기!</li>
           <li>맞히면 <b>100점</b>, 빨리 낼수록 <b>최대 50점</b> 더</li>

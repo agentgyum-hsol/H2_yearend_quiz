@@ -45,7 +45,7 @@ export function mount(el, { db, fs, player }) {
     if (room.phase === "lobby") {
       root.innerHTML = `<div class="ep-result">
         <div class="emoji" style="font-size:3rem" aria-hidden="true">🐋⚔️🐋 🦐💥</div>
-        <p class="ep-big">이게 내 이모지야</p>
+        <p class="ep-big">제 이모지야👽</p>
         <ul class="rules">
           <li>화면에 나오는 이모지를 보고 속담을 써서 내세요</li>
           <li>빨리 맞힐수록 점수가 높아요</li>
