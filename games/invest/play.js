@@ -1,12 +1,13 @@
 // 반도체왕 임삼성: 참가자(휴대폰) 화면
 // mount(el, ctx) → unmount 함수. ctx = { db, fs, player: { id, nick } }
-// 라운드: 뉴스(비율 미리 준비) → 프리장 20초(시초 주문) → 본장 30초(언제든 갈아타기) → 결과
+// 라운드: 프리장 20초(뉴스 + 시초 주문) → 본장 30초(갈아탈 때마다 슬라이더 잠김, 15초째 속보로 5초 정지) → 결과
 // 가격 흐름은 폰에서 직접 계산(서버 읽기 없음). 비율은 종목별 슬라이더로 정함.
-import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS, TRADE_COOLDOWN_MS, TOP_N, moveOf, pricePath, valueAt,
+import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS, MARKET_WALL, FLASH_SECONDS, SLIDER_LOCK_SECONDS, TRADE_COOLDOWN_MS, TOP_N,
+  tickAt, flashLeft, moveOf, pricePath, valueAt,
   cashOf, sameAlloc, toMs, won, pct, cls, arrow, esc, lineChart, loadCss } from './data.js';
 
 const GAME = 'invest';
-const T = MARKET_SECONDS, PRE = PRE_SECONDS;
+const T = MARKET_SECONDS, PRE = PRE_SECONDS, W = MARKET_WALL;
 const STEP = 5;
 
 export function mount(el, ctx) {
@@ -20,7 +21,7 @@ export function mount(el, ctx) {
   const ts = () => (fs.serverTimestamp ? fs.serverTimestamp() : Date.now());
 
   let room = null, mine = null, myTrades = [], key = '', unTr = null, winner = null;
-  let draft = null, offset = 0, lastSent = 0, busy = false, err = '', dragging = false, pending = false, stageKey = '';
+  let draft = null, offset = 0, lastSent = 0, lockUntil = 0, busy = false, err = '', dragging = false, pending = false, stageKey = '';
 
   el.innerHTML = '';
   const root = document.createElement('div');
@@ -66,22 +67,32 @@ export function mount(el, ctx) {
   const startMs = () => { const o = openMs(); return o == null ? null : o + PRE * 1000; };
   const elapsed = () => { const s = startMs(); return s == null ? -PRE * 1000 : Date.now() + offset - s; }; // 음수면 프리장
   const isPre = () => room?.phase === 'market' && elapsed() < 0;
-  const tick = () => Math.max(0, Math.min(T, Math.floor(elapsed() / 1000)));
-  const closed = () => room?.phase === 'market' && elapsed() >= T * 1000;
+  const tick = () => tickAt(Math.max(0, elapsed()));
+  const closed = () => room?.phase === 'market' && elapsed() >= W * 1000;
+  const flash = () => (room?.phase === 'market' && !isPre() && !closed() ? flashLeft(elapsed()) : 0);
   const canOrder = () => room?.phase === 'market' && !closed();
   function myTradeList() {
     const s = startMs();
     return myTrades.map(t => ({ ms: toMs(t.at) ?? (t.atMs + offset), alloc: { ...ZERO, ...t.alloc } }))
       .sort((a, b) => a.ms - b.ms)
-      .map(t => ({ ...t, tick: s == null ? 0 : Math.max(0, Math.min(T, Math.floor((t.ms - s) / 1000))) }));
+      .map(t => ({ ...t, tick: s == null ? 0 : tickAt(Math.max(0, t.ms - s)) }));
   }
   const holding = () => { const tr = myTradeList(); return tr.length ? tr[tr.length - 1].alloc : { ...ZERO, ...(mine?.lastAlloc || {}) }; };
   const cur = () => ({ ...ZERO, ...(draft || holding()) });
+  // 거래 수수료: 본장에서 주문하면 SLIDER_LOCK_SECONDS 동안 슬라이더 잠금. 새로고침해도 마지막 주문 시각으로 다시 계산.
+  function lockLeft() {
+    if (room?.phase !== 'market' || isPre() || closed()) return 0;
+    const tr = myTradeList(), last = tr[tr.length - 1], s = startMs();
+    let until = lockUntil;
+    if (last && s != null && last.ms >= s) until = Math.max(until, last.ms - offset + SLIDER_LOCK_SECONDS * 1000);
+    return Math.max(0, until - Date.now());
+  }
   const liveValue = () => valueAt(mine?.value ?? START_MONEY, mine?.lastAlloc, myTradeList(), room.round, tick());
 
   /* ---------- 주문 ---------- */
   async function order(alloc) {
     if (busy || !canOrder() || !room?.runId) return;
+    if (lockLeft() > 0) return;
     if (Date.now() - lastSent < TRADE_COOLDOWN_MS) { err = '잠깐만요, 1초에 한 번씩 주문할 수 있어요.'; render(); return; }
     if (sameAlloc(alloc, holding())) { draft = null; render(); return; }
     busy = true; err = ''; lastSent = Date.now(); render();
@@ -89,6 +100,7 @@ export function mount(el, ctx) {
       const id = `${player.id}_${Date.now().toString(36)}`;
       await fs.setDoc(fs.doc(tradeCol(room.runId, room.round), id), { pid: player.id, nick: player.nick, alloc: { ...ZERO, ...alloc }, at: ts(), atMs: Date.now() });
       draft = null;
+      if (!isPre()) lockUntil = Date.now() + SLIDER_LOCK_SECONDS * 1000;
     } catch (e) { err = '주문하지 못했어요. 다시 눌러 주세요.'; }
     busy = false; render();
   }
@@ -121,7 +133,7 @@ export function mount(el, ctx) {
     const cv = stage.querySelector('[data-pv="cash"]'); if (cv) cv.textContent = c + '%';
     const bar = stage.querySelector('[data-r="draftbar"]'); if (bar) bar.innerHTML = abarInner(a);
     const send = stage.querySelector('[data-a="send"]');
-    if (send) send.disabled = !(canOrder() && !busy && draft && !sameAlloc(draft, holding()));
+    if (send) send.disabled = !(canOrder() && !busy && !lockLeft() && draft && !sameAlloc(draft, holding()));
     const undo = stage.querySelector('[data-a="undo"]'); if (undo) undo.hidden = !(draft && !sameAlloc(draft, holding()));
   }
   root.addEventListener('input', e => {
@@ -137,7 +149,7 @@ export function mount(el, ctx) {
     const { a } = t.dataset;
     if (a === 'send') order(cur());
     else if (a === 'undo') { draft = null; render(true); }
-    else if (a === 'cash') { draft = { ...ZERO }; render(true); }
+    else if (a === 'cash') { if (!lockLeft()) { draft = { ...ZERO }; render(true); } }
   });
 
   /* ---------- 렌더 ---------- */
@@ -156,17 +168,19 @@ export function mount(el, ctx) {
     const a = cur(), c = cashOf(a), hold = holding(), dirty = draft && !sameAlloc(draft, hold);
     const pre = isPre(), news = room.phase === 'news';
     const label = news ? '프리장이 열리면 주문할 수 있어요' : pre ? '시초 주문 넣기' : '이 비율로 주문';
-    return `<div class="sliders">
+    const lk = lockLeft(), dis = lk ? 'disabled' : '';
+    return `<div class="sliders${lk ? ' locked' : ''}">
+      ${lk ? `<div class="lock" role="status">🔒 거래 수수료: <b class="num" data-live="lock">${Math.ceil(lk / 1000)}초</b> 뒤 다시 조정</div>` : ''}
       <div class="row" style="justify-content:space-between;gap:8px"><b style="font-size:.95rem">${news ? '비율 미리 정해 두기' : pre ? '시초 주문' : '지금 보유'} <span class="muted" style="font-weight:400;font-size:.85rem">${news ? '' : allocText(hold)}</span></b>
-        <button class="linkbtn" data-a="cash">전부 현금</button></div>
+        <button class="linkbtn" data-a="cash" ${dis}>전부 현금</button></div>
       ${INVEST.map(x => `<label class="srow" style="--c:${x.color}">
         <span class="sname"><span class="dot" style="background:${x.color}"></span>${x.short}</span>
-        <input type="range" min="0" max="100" step="${STEP}" value="${a[x.id]}" data-id="${x.id}" style="--p:${a[x.id]}%" aria-label="${x.name} 비율">
+        <input type="range" min="0" max="100" step="${STEP}" value="${a[x.id]}" data-id="${x.id}" ${dis} style="--p:${a[x.id]}%" aria-label="${x.name} 비율">
         <span class="spv num" data-pv="${x.id}">${a[x.id]}%</span></label>`).join('')}
       <div class="srow" style="--c:${ASSETS[4].color}"><span class="sname"><span class="dot" style="background:${ASSETS[4].color}"></span>현금</span>
         <div class="abar" data-r="draftbar">${abarInner(a)}</div><span class="spv num" data-pv="cash">${c}%</span></div>
       <div class="row" style="gap:8px;flex-wrap:nowrap">
-        <button class="btn primary" style="flex:1;padding:14px" data-a="send" ${canOrder() && !busy && dirty ? '' : 'disabled'}>${label}</button>
+        <button class="btn primary" style="flex:1;padding:14px" data-a="send" ${canOrder() && !busy && !lk && dirty ? '' : 'disabled'}>${label}</button>
         <button class="btn ghost" data-a="undo" ${dirty ? '' : 'hidden'}>되돌리기</button></div>
     </div>`;
   }
@@ -177,16 +191,19 @@ export function mount(el, ctx) {
     if (dragging && !force) { pending = true; return; }
     const e = err ? `<p class="warn" role="alert" style="margin-bottom:10px">${esc(err)}</p>` : '';
     const body = { lobby: vLobby, news: vNews, market: vMarket, reveal: vReveal, final: vFinal }[room.phase] || vLobby;
-    stageKey = room.phase + (isPre() ? 'pre' : '') + (closed() ? 'closed' : '');
+    stageKey = phaseKey();
     stage.innerHTML = e + header() + body();
   }
   // 장 중 0.5초마다: 차트·시계·내 자산만 바꿔 끼움 (슬라이더와 버튼은 그대로 두어 조작이 끊기지 않게)
+  // 화면 구조가 바뀌는 시점(프리장·속보·잠금·마감)을 구분하는 키
+  const phaseKey = () => room.phase + (isPre() ? 'pre' : '') + (flash() ? 'flash' : '') + (lockLeft() ? 'lock' : '') + (closed() ? 'closed' : '');
   function live() {
-    const nowKey = room.phase + (isPre() ? 'pre' : '') + (closed() ? 'closed' : '');
-    if (nowKey !== stageKey) { render(); return; }
+    if (phaseKey() !== stageKey) { render(); return; }
     const set = (k, h) => { const n = stage.querySelector(`[data-live="${k}"]`); if (n) n.innerHTML = h; };
     if (isPre()) { set('clock', `${Math.ceil(-elapsed() / 1000)}<span>초</span>`); return; }
-    const v = liveValue(), left = Math.max(0, T - Math.floor(elapsed() / 1000)), tk = tick();
+    const lk = lockLeft(); if (lk) set('lock', Math.ceil(lk / 1000) + '초');
+    const fl = flash(); if (fl) set('flash', fl + '초');
+    const v = liveValue(), tk = tick(), left = T - tk;
     set('val', `${won(v)} <span class="${cls(v - START_MONEY)}" style="font-size:.7em">${pct((v / START_MONEY - 1) * 100)}</span>`);
     set('clock', `${left}<span>초</span>`);
     set('chart', chartHtml(tk));
@@ -200,15 +217,22 @@ export function mount(el, ctx) {
   function vLobby() {
     return `<div class="stack"><div class="hero stack" style="gap:10px"><div class="big">입장 완료!</div><p class="muted">운영자가 게임을 시작하면 화면이 바뀝니다.</p></div>
       <div class="card stack" style="gap:8px"><b>규칙</b>
-        <p class="muted">모두 ${won(START_MONEY)}으로 시작해요. 라운드마다 뉴스를 보고, ${PRE}초 프리장에서 시초 주문을 넣고, ${T}초 본장에서 차트를 보며 언제든 슬라이더로 비율을 바꿔 주문할 수 있어요.</p>
-        <p class="muted">${ROUNDS.length}라운드 뒤 자산이 가장 많은 사람이 반도체왕! 마지막 라운드는 등락 2배 더블 찬스. 자산이 같으면 더 빨리 결정한 사람이 이겨요.</p></div></div>`;
+        <ul class="tips">
+          <li>모두 ${won(START_MONEY)}으로 시작, ${ROUNDS.length}라운드 뒤 자산 1등이 반도체왕</li>
+          <li>라운드가 열리면 바로 ${PRE}초 프리장: 뉴스 보고 시초 주문</li>
+          <li>${T}초 본장: 슬라이더로 비율을 바꿔 주문</li>
+          <li>거래 수수료: 본장에서 주문하면 슬라이더 ${SLIDER_LOCK_SECONDS}초 잠김</li>
+          <li>본장 중간 추가 속보: 장이 ${FLASH_SECONDS}초 멈추고 그 사이 결정</li>
+          <li>마지막 라운드는 등락 2배 더블 찬스</li>
+          <li>자산이 같으면 더 빨리 결정한 사람이 승리</li>
+        </ul></div></div>`;
   }
   function vNews() {
     const r = ROUNDS[room.round];
     return `<div class="stack" style="gap:12px">
       ${r.double ? '<div class="status" style="color:var(--accent)">더블 찬스! 이번 라운드는 등락 2배</div>' : ''}
       <div class="news-s"><div class="num muted" style="font-size:.85rem">${r.when}</div><h2>${r.title}</h2><ul>${r.bullets.map(b => `<li>${b}</li>`).join('')}</ul></div>
-      <p class="muted" style="font-size:.88rem">뉴스를 보며 비율을 미리 정해 두세요. 곧 ${PRE}초 프리장이 열리면 주문할 수 있어요. 주문하지 않으면 지난 라운드 비율 그대로 갑니다.</p>
+      <ul class="tips"><li>운영자가 이 라운드를 다시 열 때까지 비율을 미리 정해 두세요</li><li>주문하지 않으면 지난 라운드 비율 그대로</li></ul>
       ${controls()}
     </div>`;
   }
@@ -219,12 +243,16 @@ export function mount(el, ctx) {
         <div class="row" style="justify-content:space-between;align-items:center">
           <div style="flex:1;min-width:0"><div class="eyebrow" style="color:var(--accent)">프리장 · 시초 주문</div><b style="font-size:1rem;line-height:1.3">${r.title}${r.double ? ' <span style="color:var(--accent)">×2</span>' : ''}</b></div>
           <span class="clock num" data-live="clock">${Math.ceil(-elapsed() / 1000)}<span>초</span></span></div>
-        <p class="muted" style="font-size:.88rem">프리장 주문은 본장 시작 가격으로 체결돼요. 끝나면 바로 ${T}초 본장이 열립니다.</p>
+        <ul class="news-b">${r.bullets.map(b => `<li>${b}</li>`).join('')}</ul>
+        <ul class="tips"><li>프리장 주문은 본장 시작 가격으로 체결</li><li>본장에선 주문할 때마다 슬라이더 ${SLIDER_LOCK_SECONDS}초 잠김</li></ul>
         ${controls()}
       </div>`;
     }
-    const tk = tick(), left = Math.max(0, T - Math.floor(elapsed() / 1000));
+    const tk = tick(), left = T - tk, fl = flash();
     return `<div class="stack" style="gap:10px">
+      ${fl ? `<div class="flash" role="alert"><div class="row" style="justify-content:space-between;align-items:center;gap:8px">
+        <span class="flash-tag">추가 속보 · 장 정지</span><b class="num" data-live="flash">${fl}초</b></div>
+        <b style="font-size:1.05rem;line-height:1.35">${r.flash.title}</b><ul>${r.flash.bullets.map(b => `<li>${b}</li>`).join('')}</ul></div>` : ''}
       <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
         <div style="flex:1;min-width:0"><div class="eyebrow">본장 · 이번 라운드 <span data-live="ret"></span></div><b style="font-size:.95rem;line-height:1.3">${r.title}${r.double ? ' <span style="color:var(--accent)">×2</span>' : ''}</b></div>
         <span class="clock num" data-live="clock">${left}<span>초</span></span></div>
