@@ -21,7 +21,7 @@ export function mount(el, ctx) {
   const tradeCol = (run, r) => fs.collection(db, 'rooms', GAME, `trades_${run}_${r}`);
   const ts = () => (fs.serverTimestamp ? fs.serverTimestamp() : Date.now());
 
-  let room = null, ports = {}, trades = [], tradeKey = '', unTrades = null, winners = {};
+  let room = null, ports = {}, trades = [], tradeKey = '', unTrades = null, winners = {}, roster = [];
   let ui = { confirm: null, revealed: 0, revealKey: '', busy: false, err: '', settling: '' };
   let timer = null;
 
@@ -48,6 +48,8 @@ export function mount(el, ctx) {
   }, e => showErr(e));
   const unPorts = fs.onSnapshot(portCol, s => { ports = {}; s.forEach(d => { ports[d.id] = d.data(); }); render(); }, e => showErr(e));
   const unWin = watchWinners(db, fs, w => { winners = w; render(); });
+  // 메인 입장 명단. 이 게임에 아직 안 들어온 사람을 '명단에서 불러오기'로 채울 때 씀
+  const unRoster = fs.onSnapshot(fs.collection(db, 'players'), s => { roster = s.docs.map(d => ({ id: d.id, nick: d.data().nick })); render(); });
 
   // 장 중에는 1초마다 다시 그리고, 시간이 다 되면 자동 정산
   const tickTimer = setInterval(() => {
@@ -157,6 +159,17 @@ export function mount(el, ctx) {
     });
   }
 
+  // 메인 명단에 있는데 이 게임에 없는 사람을 시작 자금으로 넣음 (실수로 비웠거나 폰이 꺼져 있던 사람 복구)
+  function importRoster() {
+    return act(async () => {
+      const b = fs.writeBatch(db);
+      roster.filter(p => !ports[p.id]).forEach(p => b.set(fs.doc(portCol, p.id),
+        { nick: p.nick, value: START_MONEY, hist: [START_MONEY], lastAlloc: ZERO, roundRet: 0, prevRank: null, rank: null, total: null,
+          settledRound: -1, totalTime: 0 }));
+      await b.commit();
+    });
+  }
+
   function startReveal(key) {
     ui.revealKey = key; ui.revealed = 0; clearInterval(timer);
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) { ui.revealed = 99; return; }
@@ -182,6 +195,7 @@ export function mount(el, ctx) {
     else if (a === 'cancel') { ui.confirm = null; render(); }
     else if (a === 'reset') resetGame();
     else if (a === 'clear') clearPlayers();
+    else if (a === 'import') importRoster();
     else if (a === 'confirm-win') act(async () => { const p = pickWinner(finalRows(), winners, GAME); if (p.winner) await confirmWinner(db, fs, GAME, p.winner); });
     else if (a === 'unconfirm-win') act(() => clearWinner(db, fs, GAME));
   });
@@ -217,8 +231,11 @@ export function mount(el, ctx) {
     let steps = '', btns = '';
     if (room.phase === 'lobby') {
       steps = `<span class="muted">참가자 ${n}명 · ${ROUNDS.length}라운드 · 라운드마다 ${T}초 장</span>`;
-      btns = confirmBox('clear', '참가자 명단을 모두 지울까요?', '예, 지우기') ||
+      const missing = roster.filter(p => !ports[p.id]).length;
+      steps += missing ? ` <span class="muted">· 메인 명단 중 ${missing}명 아직 안 들어옴</span>` : '';
+      btns = confirmBox('clear', '이 게임 참가자를 비울까요? 화면을 켜 둔 사람은 바로 다시 들어와요.', '예, 비우기') ||
         `<button class="btn ghost" data-a="ask" data-k="clear" ${n ? '' : 'disabled'}>참가자 비우기</button>`;
+      if (missing) btns += `<button class="btn ghost" data-a="import" ${busy}>명단에서 불러오기 (${missing}명)</button>`;
       btns += `<button class="btn primary" data-a="start" ${n < 1 || ui.busy ? 'disabled' : ''}>게임 시작</button>`;
     } else if (room.phase === 'final') {
       steps = '<span class="step on">최종 결과</span>';
@@ -250,7 +267,7 @@ export function mount(el, ctx) {
       <div class="stack">
         <div class="eyebrow">송년회 투자 배틀 · 개인전</div>
         <h1>반도체왕 <span style="color:var(--accent)">임삼성</span></h1>
-        <ul class="rules">
+        <ul class="rules" style="font-size:1.15rem">
           <li>모두 <b>${won(START_MONEY)}</b>으로 시작, ${ROUNDS.length}라운드 뒤 자산 1등이 올해의 반도체왕</li>
           <li>라운드가 열리면 바로 <b>${PRE}초 프리장</b>: 뉴스 보고 시초 주문</li>
           <li><b>${T}초 본장</b>: 차트를 보며 슬라이더로 비율 변경</li>
@@ -399,6 +416,6 @@ export function mount(el, ctx) {
   }
 
   return function unmount() {
-    clearInterval(timer); clearInterval(tickTimer); unRoom(); unPorts(); unWin(); unTrades && unTrades(); el.innerHTML = '';
+    clearInterval(timer); clearInterval(tickTimer); unRoom(); unPorts(); unWin(); unRoster(); unTrades && unTrades(); el.innerHTML = '';
   };
 }

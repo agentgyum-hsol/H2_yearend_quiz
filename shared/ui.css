@@ -69,3 +69,9 @@ button:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outl
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* 규칙·설명 불릿 목록. 가운데 정렬된 화면 안에서도 글은 왼쪽 정렬 */
+ul.rules { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; text-align: left; color: var(--muted); max-width: 62ch; }
+ul.rules li { position: relative; padding-left: 1.1em; }
+ul.rules li::before { content: ""; position: absolute; left: 0; top: .62em; width: .4em; height: .4em; border-radius: 50%; background: var(--gold); }
+ul.rules b { color: var(--paper); font-weight: 700; }

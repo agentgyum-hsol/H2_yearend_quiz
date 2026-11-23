@@ -52,7 +52,12 @@ export function mount(el, { db, fs, player }) {
       root.innerHTML = `<div class="sp-center">
         <div class="emoji" style="font-size:3rem" aria-hidden="true">🌡️🔤🕵️</div>
         <p class="sp-big">H2맨틀</p>
-        <p class="muted" style="margin:0">비밀 단어를 맞히는 게임이에요. 아무 단어나 넣으면 비밀 단어와 얼마나 가까운지 유사도와 순위가 나와요. 유사도가 높은 단어를 따라가세요. 추측 횟수는 무제한, 먼저 맞힐수록 점수가 높아요.</p>
+        <ul class="rules">
+          <li>비밀 단어를 맞히는 게임이에요</li>
+          <li>아무 단어나 넣으면 비밀 단어와 얼마나 가까운지 <b>유사도</b>와 <b>순위</b>가 나와요</li>
+          <li>유사도가 높은 단어를 따라가세요</li>
+          <li>추측 횟수는 무제한, 먼저 맞힐수록 점수가 높아요</li>
+        </ul>
         <p class="muted">곧 시작합니다</p></div>`;
     }
 
