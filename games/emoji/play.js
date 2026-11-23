@@ -57,7 +57,8 @@ export function mount(el, { db, fs, player }) {
         <div class="ep-emoji" aria-label="이모지 문제">${q.e.map(r => `<span>${r}</span>`).join("")}</div>
         <div class="ep-hint" id="epHint"></div>
         <form id="epForm" autocomplete="off">
-          <input class="field" id="epText" maxlength="40" placeholder="속담을 써 주세요" enterkeyhint="send">
+          <input class="field" id="epText" maxlength="40" placeholder="속담을 써 주세요" enterkeyhint="send" aria-describedby="epRule">
+          <div class="ep-rule" id="epRule">띄어쓰기는 상관없어요</div>
           <button class="btn primary" id="epBtn" type="submit">제출</button>
           <div class="ep-sent" id="epSent" role="status"></div>
         </form>`;
