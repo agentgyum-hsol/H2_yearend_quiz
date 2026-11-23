@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>송년회 퀴즈</title>
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  body { display: flex; flex-direction: column; gap: 14px; min-height: 100%; max-width: 560px; margin: 0 auto; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .center { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 18px; text-align: center; }
+  h1 { margin: 0; font-family: var(--display); font-weight: 400; font-size: 2.2rem; line-height: 1.15; }
+  form { display: flex; flex-direction: column; gap: 10px; }
+  .err { color: var(--dancheong); min-height: 1.4em; font-size: .95rem; }
+  .wait-emoji { font-family: var(--emoji); font-size: 3.5rem; animation: bob 2.4s ease-in-out infinite; }
+  @keyframes bob { 50% { transform: translateY(-8px); } }
+  #game { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand" id="brand"></div>
+  <span class="pill" id="me" hidden></span>
+</header>
+
+<section class="center" id="loading"><p class="muted">연결하는 중…</p></section>
+
+<section class="center" id="join" hidden>
+  <h1>닉네임을 정해 주세요</h1>
+  <p class="muted" style="margin:0">순위표에 이 이름이 나옵니다. 이름이나 별명을 쓰면 찾기 쉬워요.</p>
+  <form id="joinForm" autocomplete="off">
+    <input class="field" id="nick" maxlength="10" placeholder="예: 김대리" required>
+    <button class="btn primary" type="submit">입장하기</button>
+    <div class="err" id="joinErr" role="alert"></div>
+  </form>
+</section>
+
+<section class="center" id="wait" hidden>
+  <div class="wait-emoji" aria-hidden="true">🎄</div>
+  <h1 id="waitTitle"></h1>
+  <p class="muted" style="margin:0">진행자가 게임을 시작하면 화면이 자동으로 바뀝니다. 이 화면을 켜 둔 채로 기다려 주세요.</p>
+</section>
+
+<section id="game" hidden></section>
+<div class="mock-banner" id="mockBanner" hidden>로컬 모의 DB로 실행 중입니다.</div>
+
+<script type="module">
+import { connect } from "../shared/db.js";
+import { EVENT_ID } from "../shared/games.js";
+import { EVENT_NAME } from "../config.js";
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+$("brand").innerHTML = `${esc(EVENT_NAME)} <span>퀴즈</span>`;
+
+const { db, fs, uid, mock } = await connect();
+$("mockBanner").hidden = !mock;
+const show = id => ["loading", "join", "wait", "game"].forEach(s => $(s).hidden = s !== id);
+
+let player = null;           // {id, nick}
+let currentGame = undefined; // rooms/current.gameId
+let unmount = null, mountedId = null;
+
+// 내 참가자 문서. 운영자가 명단을 비우면 다시 닉네임 화면으로.
+fs.onSnapshot(fs.doc(db, "players", uid), snap => {
+  if (snap.exists()) {
+    player = { id: uid, nick: snap.data().nick };
+    $("me").textContent = player.nick; $("me").hidden = false;
+    $("waitTitle").textContent = `${player.nick}님, 입장 완료!`;
+  } else {
+    player = null; $("me").hidden = true;
+  }
+  route();
+});
+
+fs.onSnapshot(fs.doc(db, "rooms", "current"), snap => {
+  currentGame = snap.exists() ? snap.data().gameId || null : null;
+  route();
+});
+
+$("joinForm").onsubmit = async e => {
+  e.preventDefault();
+  const nick = $("nick").value.trim().replace(/\s+/g, " ");
+  if (nick.length < 1) { $("joinErr").textContent = "닉네임을 한 글자 이상 써 주세요."; return; }
+  const same = await fs.getDocs(fs.query(fs.collection(db, "players"), fs.where("nick", "==", nick)));
+  if (same.docs.some(d => d.id !== uid)) { $("joinErr").textContent = "이미 누가 쓰고 있는 닉네임이에요. 다른 이름으로 해 주세요."; return; }
+  $("joinErr").textContent = "";
+  await fs.setDoc(fs.doc(db, "players", uid), { nick, joinedAt: fs.serverTimestamp() });
+};
+
+async function route() {
+  if (!player) { unmountGame(); show("join"); setTimeout(() => $("nick").focus(), 50); return; }
+  if (currentGame === undefined) return;
+  if (!currentGame) { unmountGame(); show("wait"); return; }
+  if (mountedId === currentGame) { show("game"); return; }
+  unmountGame();
+  mountedId = currentGame;
+  show("game");
+  try {
+    const mod = await import(`../games/${currentGame}/play.js`);
+    if (mountedId !== currentGame) return;
+    unmount = mod.mount($("game"), { db, fs, gameId: currentGame, eventId: EVENT_ID, player, mock }) || null;
+  } catch (e) {
+    console.error(e);
+    $("game").innerHTML = `<div class="center"><h1>잠시만요</h1><p class="muted">게임을 불러오지 못했어요. 화면을 새로고침해 주세요.</p></div>`;
+  }
+}
+function unmountGame() {
+  if (unmount) { try { unmount(); } catch (e) { console.error(e); } }
+  unmount = null; mountedId = null; $("game").innerHTML = "";
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>송년회 퀴즈 운영</title>
+<link rel="stylesheet" href="../shared/ui.css">
+<style>
+  body { display: flex; flex-direction: column; gap: 14px; height: 100%; }
+  #lobby { overflow: auto; }
+  header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header .right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  #lobby { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; flex: 1; }
+  @media (max-width: 860px) { #lobby { grid-template-columns: 1fr; } }
+  .join { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }
+  .join h1 { margin: 0; font-family: var(--display); font-weight: 400; font-size: clamp(2rem, 4.5vw, 3.4rem); line-height: 1.1; }
+  #qr { background: #fff; padding: 14px; border-radius: 14px; line-height: 0; }
+  #qr img, #qr canvas { width: min(46vh, 320px); height: auto; image-rendering: pixelated; }
+  #joinUrl { font-family: var(--mono); font-size: .95rem; color: var(--gold); overflow-wrap: anywhere; }
+  .count { font-family: var(--display); font-size: clamp(2.4rem, 6vw, 4.5rem); color: var(--gold); line-height: 1; }
+  .side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .games { display: grid; gap: 12px; }
+  .game { text-align: left; border: 1px solid var(--line); background: var(--night-2); border-radius: 16px; padding: 18px; display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; align-items: center; }
+  .game:hover { border-color: var(--gold); }
+  .game .e { font-family: var(--emoji); font-size: 2.2rem; grid-row: span 2; }
+  .game b { font-family: var(--display); font-weight: 400; font-size: 1.5rem; }
+  .game small { color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 32vh; overflow: auto; }
+  .chip { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: .9rem; }
+  #game { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .danger-zone { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand" id="brand"></div>
+  <div class="right">
+    <span class="pill" id="pcount">참가 0명</span>
+    <button class="btn" id="toLobby" hidden>← 게임 선택</button>
+  </div>
+</header>
+
+<section id="lobby">
+  <div class="card join">
+    <h1>휴대폰으로 QR을 찍고<br>닉네임을 정해 주세요</h1>
+    <div id="qr" aria-label="참가 QR 코드"></div>
+    <div id="joinUrl"></div>
+    <div><span class="count mono" id="bigCount">0</span> <span class="muted">명 입장</span></div>
+  </div>
+  <div class="side">
+    <div class="card">
+      <div class="muted" style="margin-bottom:10px">진행할 게임을 고르면 모든 참가자 화면이 그 게임으로 바뀝니다.</div>
+      <div class="games" id="games"></div>
+    </div>
+    <div class="card">
+      <div class="muted" style="margin-bottom:8px">입장한 사람</div>
+      <div class="chips" id="chips"><span class="muted">아직 없어요</span></div>
+    </div>
+    <div class="card danger-zone">
+      <button class="btn warn" id="resetPlayers">참가자 명단 비우기</button>
+      <span class="muted" id="resetNote" style="font-size:.9rem"></span>
+    </div>
+  </div>
+</section>
+
+<section id="game" hidden></section>
+<div class="mock-banner" id="mockBanner" hidden>로컬 모의 DB로 실행 중입니다. 같은 브라우저의 탭끼리만 연결됩니다.</div>
+
+<script src="../shared/vendor/qrcode.js"></script>
+<script type="module">
+import { connect } from "../shared/db.js";
+import { GAMES, EVENT_ID } from "../shared/games.js";
+import { EVENT_NAME } from "../config.js";
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+$("brand").innerHTML = `${esc(EVENT_NAME)} <span>퀴즈</span> 운영`;
+
+const { db, fs, mock } = await connect();
+$("mockBanner").hidden = !mock;
+
+// 참가 주소와 QR
+const joinUrl = new URL("../play/", location.href);
+if (mock) joinUrl.searchParams.set("mock", "1");
+$("joinUrl").textContent = joinUrl.href;
+try {
+  const qr = qrcode(0, "M"); qr.addData(joinUrl.href); qr.make();
+  $("qr").innerHTML = qr.createImgTag(8, 0);
+} catch { $("qr").hidden = true; }
+
+// 게임 목록
+$("games").innerHTML = GAMES.map(g => `
+  <button class="game" data-id="${g.id}">
+    <span class="e" aria-hidden="true">${g.emoji}</span><b>${esc(g.title)}</b><small>${esc(g.sub)}</small>
+  </button>`).join("");
+$("games").querySelectorAll(".game").forEach(b => b.onclick = () => openGame(b.dataset.id));
+$("toLobby").onclick = () => fs.setDoc(fs.doc(db, "rooms", "current"), { gameId: null }, { merge: true });
+
+// 참가자 목록
+let players = [];
+fs.onSnapshot(fs.collection(db, "players"), snap => {
+  players = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  $("pcount").textContent = `참가 ${players.length}명`;
+  $("bigCount").textContent = players.length;
+  $("chips").innerHTML = players.length
+    ? players.map(p => `<span class="chip">${esc(p.nick)}</span>`).join("")
+    : `<span class="muted">아직 없어요</span>`;
+});
+
+// 참가자 명단 비우기: 두 번 눌러야 실행
+let armed = false;
+$("resetPlayers").onclick = async () => {
+  if (!armed) { armed = true; $("resetNote").textContent = "한 번 더 누르면 모든 참가자가 닉네임을 다시 정해야 합니다."; setTimeout(() => { armed = false; $("resetNote").textContent = ""; }, 5000); return; }
+  armed = false;
+  const b = fs.writeBatch(db);
+  players.forEach(p => b.delete(fs.doc(db, "players", p.id)));
+  await b.commit();
+  $("resetNote").textContent = "비웠습니다.";
+};
+
+// 현재 게임 상태에 따라 화면 전환
+let unmount = null, mountedId = null;
+async function openGame(id) { await fs.setDoc(fs.doc(db, "rooms", "current"), { gameId: id }, { merge: true }); }
+
+fs.onSnapshot(fs.doc(db, "rooms", "current"), async snap => {
+  const id = snap.exists() ? snap.data().gameId : null;
+  if (id === mountedId) return;
+  if (unmount) { try { unmount(); } catch (e) { console.error(e); } unmount = null; }
+  mountedId = id;
+  const el = $("game");
+  el.innerHTML = "";
+  $("lobby").hidden = !!id; el.hidden = !id; $("toLobby").hidden = !id;
+  if (!id) return;
+  try {
+    const mod = await import(`../games/${id}/host.js`);
+    if (mountedId !== id) return;
+    unmount = mod.mount(el, { db, fs, gameId: id, eventId: EVENT_ID, mock, joinUrl: joinUrl.href }) || null;
+  } catch (e) {
+    console.error(e);
+    el.innerHTML = `<div class="card" style="margin:auto;text-align:center"><p class="display" style="font-size:2rem;margin:0">이 게임은 아직 준비 중이에요</p><p class="muted">${esc(e.message)}</p></div>`;
+  }
+});
+</script>
+</body>
+</html>
