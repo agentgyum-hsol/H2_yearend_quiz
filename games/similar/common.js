@@ -9,6 +9,7 @@
 //   rooms/similar                         {phase: lobby|round|reveal|final, round, startedAt, duration, hints: [{r, w}], finalStep}
 //   rooms/similar/guesses/{gid}           {pid, nick, round, word, at}     참가자가 씀
 //   rooms/similar/feedback/{round}_{pid}  {round, list: [{w, s, r}], solvedMs, n}   운영자가 채점해 씀
+//   rooms/similar/feed/current            {round, top: [{w, s, r, nick}], recent: [{w, s, r, nick} | {nick, hit}], solved: [nick], total}  모두의 추측 (정답 단어는 빠짐)
 //   rooms/similar/rounds/{round}          {answer, top: [{w, s}], marks: {pid: {solved, t, best, bestW, pts}}}  정답 공개 때
 //   rooms/similar/board/current           {round, rows: [{id, nick, score, solves, timeMs, rank, last}]}  정답 공개 때
 //   s: 유사도 x100 (소수 둘째 자리), r: 순위 (0 = 정답, 1 = 가장 가까운 단어, 1000 넘으면 null)
@@ -23,6 +24,9 @@ export const GRACE_MS = 2000;            // 마감 직후 도착한 추측 허�
 export const RANK_CUTOFF = 1000;         // 이 순위 밖은 "1000위 밖"
 export const MIN_GAP_MS = 1500;          // 한 사람의 추측 간격 (Firestore 쓰기 한도 보호)
 export const HINT_RANKS = [100, 30, 10]; // 운영자가 차례로 공개할 수 있는 힌트 순위
+export const FEED_TOP = 30;              // 모두의 추측: 가까운 단어 몇 개까지 공개
+export const FEED_RECENT = 20;           // 모두의 추측: 최근 추측 몇 개까지 공개
+export const FEED_EVERY_MS = 2000;       // 모두의 추측 갱신 간격 (Firestore 읽기 한도 보호)
 
 // [가정] 점수: 맞힌 순서대로 100, 98, 96 … 최소 50. 못 맞히면 가장 가까이 간 순위로 부분 점수.
 export function solvePoints(order) { return Math.max(50, 100 - 2 * order); }

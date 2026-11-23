@@ -1,5 +1,5 @@
 // H2맨틀 운영자 화면 (프로젝터용). 비밀 단어를 갖고 있고, 참가자 추측을 채점합니다.
-import { ROOM, GAME_ID, TITLE, ROUNDS, DURATION_MS, EXTEND_MS, GRACE_MS, HINT_RANKS,
+import { ROOM, GAME_ID, TITLE, ROUNDS, FEED_TOP, FEED_RECENT, FEED_EVERY_MS, DURATION_MS, EXTEND_MS, GRACE_MS, HINT_RANKS,
   solvePoints, nearPoints, loadStyle, esc, norm, fmtSim, fmtRank, heat, ranked } from "./common.js";
 import { loadEngine, SUGGEST } from "./engine.js";
 import { ms } from "../../shared/db.js";
@@ -78,7 +78,7 @@ export function mount(el, { db, fs }) {
       if (!by.has(g.pid)) by.set(g.pid, []);
       by.get(g.pid).push({ ...g, at });
     }
-    const next = new Map();
+    const next = new Map(), events = [];
     for (const [pid, gs] of by) {
       gs.sort((a, b) => a.at - b.at);
       const seen = new Set(), list = [];
@@ -90,13 +90,16 @@ export function mount(el, { db, fs }) {
         seen.add(w);
         const hit = t.lookup(w) || { w, s: null, r: null, u: 1 };
         list.push(hit);
+        if (!hit.u) events.push({ pid, nick: g.nick, w: hit.w, s: hit.s, r: hit.r, at: g.at });
         if (hit.r === 0) solvedMs = Math.max(0, g.at - (st ?? g.at));
         if (!hit.u && (best == null || hit.s > best.s)) best = hit;
       }
       next.set(pid, { pid, nick: gs[gs.length - 1].nick, list, best, solvedMs, n: list.length });
     }
     live = next;
+    feed = buildFeed(events);
     renderLive();
+    scheduleFeed();
 
     if (writing) { again = true; return; }
     writing = true;
@@ -117,6 +120,31 @@ export function mount(el, { db, fs }) {
       } while (again);
     } catch (e) { console.error(e); written.clear(); }
     finally { writing = false; }
+  }
+
+  // ── 모두의 추측: 다른 사람의 단어와 순위를 공개해 함께 추리. 비밀 단어(정답)만 가림 ──
+  // rooms/similar/feed/current 문서 하나에 모아 2초에 한 번까지만 씀 (참가자 50명이 이 문서 하나만 구독)
+  let feed = null, feedSig = null, feedTimer = null, feedAt = 0;
+  function buildFeed(events) {
+    const first = new Map();
+    for (const e of [...events].sort((a, b) => a.at - b.at)) if (e.r !== 0 && !first.has(e.w)) first.set(e.w, e);
+    const top = [...first.values()].sort((a, b) => b.s - a.s).slice(0, FEED_TOP).map(({ w, s, r, nick }) => ({ w, s, r, nick }));
+    const recent = [...events].sort((a, b) => b.at - a.at).slice(0, FEED_RECENT)
+      .map(e => (e.r === 0 ? { nick: e.nick, hit: 1 } : { w: e.w, s: e.s, r: e.r, nick: e.nick }));
+    const solved = [...live.values()].filter(p => p.solvedMs != null).sort((a, b) => a.solvedMs - b.solvedMs).map(p => p.nick);
+    return { round: room.round, top, recent, solved, total: events.length };
+  }
+  function scheduleFeed() {
+    if (!feed || feedTimer) return;
+    const wait = Math.max(0, feedAt + FEED_EVERY_MS - Date.now());
+    feedTimer = setTimeout(async () => {
+      feedTimer = null;
+      const sig = JSON.stringify(feed);
+      if (sig === feedSig || room?.phase !== "round") return;
+      feedSig = sig; feedAt = Date.now();
+      try { await fs.setDoc(fs.doc(db, ...ROOM, "feed", "current"), feed); }
+      catch (e) { console.error(e); feedSig = null; }
+    }, wait);
   }
 
   // ── 진행 동작 ──
@@ -189,7 +217,7 @@ export function mount(el, { db, fs }) {
   async function resetGame() {
     if (!resetArmed) { resetArmed = true; render(); setTimeout(() => { resetArmed = false; render(); }, 5000); return; }
     resetArmed = false;
-    for (const name of ["guesses", "feedback", "rounds", "board"]) {
+    for (const name of ["guesses", "feedback", "feed", "rounds", "board"]) {
       const docs = (await fs.getDocs(col(name))).docs;
       for (let i = 0; i < docs.length; i += 450) {
         const b = fs.writeBatch(db); docs.slice(i, i + 450).forEach(d => b.delete(d.ref)); await b.commit();
@@ -374,6 +402,7 @@ export function mount(el, { db, fs }) {
   }
 
   // 큰 화면 실시간 현황: 단어는 가리고 닉네임과 가장 가까운 순위만
+  // 큰 화면 실시간 현황: 모두의 추측 단어와 순위 (정답 단어만 가림)
   function renderLive() {
     const box = $("shLive"), c = $("shCount");
     if (!box || room?.phase !== "round") return;
@@ -381,14 +410,23 @@ export function mount(el, { db, fs }) {
     const nSolved = rows.filter(p => p.solvedMs != null).length;
     const total = rows.reduce((a, p) => a + p.n, 0);
     if (c) c.innerHTML = `정답 <b>${nSolved}</b>명 · 참여 <b>${rows.length}</b> / ${players.length} · 추측 <b>${total}</b>개`;
-    box.innerHTML = rows.length ? rows.slice(0, 12).map((p, i) => {
-      const r = p.solvedMs != null ? 0 : p.best?.r ?? null;
-      return `<div class="sh-live-row ${r === 0 ? "solved" : ""}">
-        <span class="i mono">${i + 1}</span><span class="n">${esc(p.nick)}</span>
-        <span class="bar"><i style="width:${heat(r) * 100}%"></i></span>
-        <span class="r mono">${r === 0 ? `🎉 ${fmtTime(p.solvedMs)}` : fmtRank(r)}</span><span class="k mono muted">${p.n}회</span></div>`;
-    }).join("") : `<p class="muted">추측을 기다리는 중… 휴대폰에서 아무 단어나 넣어 보세요.</p>`;
+    if (!feed || !feed.total) { box.innerHTML = `<p class="muted">추측을 기다리는 중… 휴대폰에서 아무 단어나 넣어 보세요.</p>`; return; }
+    const solvedNames = rows.filter(p => p.solvedMs != null).map(p => `<span class="chip ok">🎉 ${esc(p.nick)} <small class="mono">${fmtTime(p.solvedMs)}</small></span>`).join("");
+    box.innerHTML = `
+      ${solvedNames ? `<div class="sh-solved">${solvedNames}</div>` : ""}
+      <div class="sh-feed">
+        <div class="card"><div class="muted sh-feed-h">가장 가까운 단어</div>
+          ${feed.top.slice(0, 15).map((x, i) => feedRow(x, i + 1)).join("")}</div>
+        <div class="card"><div class="muted sh-feed-h">방금 들어온 추측</div>
+          ${feed.recent.slice(0, 15).map(x => feedRow(x)).join("")}</div>
+      </div>`;
   }
+  function feedRow(x, i) {
+    if (x.hit) return `<div class="sh-feed-row hit"><span class="i"></span><span class="w">🎉 정답!</span><span class="n">${esc(x.nick)}</span><span class="s"></span><span class="r"></span></div>`;
+    return `<div class="sh-feed-row"><span class="i mono muted">${i ?? ""}</span><span class="w">${esc(x.w)}</span><span class="n">${esc(x.nick)}</span>
+      <span class="s mono">${fmtSim(x.s)}</span><span class="r"><span class="bar"><i style="width:${heat(x.r) * 100}%"></i></span><small class="mono">${fmtRank(x.r)}</small></span></div>`;
+  }
+
 
   let busy = false;
   async function act(a) {

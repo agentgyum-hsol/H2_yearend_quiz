@@ -111,3 +111,26 @@
 .sp-stat b { font-family: var(--display); font-weight: 400; font-size: 2.2rem; }
 .sp-stat b small { font-size: 1rem; }
 .sp-stat > div > small { color: var(--muted); }
+
+/* 모두의 추측 (운영자 큰 화면) */
+.sh-solved { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 10px; }
+.chip.ok, .sp-chip { border: 1px solid var(--pine); color: var(--pine); border-radius: 999px; padding: 3px 12px; }
+.sh-feed { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; text-align: left; }
+@media (max-width: 760px) { .sh-feed { grid-template-columns: 1fr; } }
+.sh-feed .card { background: var(--night); padding: 14px 16px; display: grid; gap: 4px; align-content: start; }
+.sh-feed-h { margin-bottom: 4px; }
+.sh-feed-row { display: grid; grid-template-columns: 1.8em minmax(0, 1.3fr) minmax(0, 1fr) 4.2em 7em; gap: 10px; align-items: center; font-size: clamp(1rem, 1.6vw, 1.3rem); }
+.sh-feed-row .w { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-feed-row .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: .85em; }
+.sh-feed-row .s { text-align: right; }
+.sh-feed-row .r { display: grid; gap: 2px; }
+.sh-feed-row .r small { font-size: .7em; color: var(--muted); text-align: right; }
+.sh-feed-row.hit .w { color: var(--pine); }
+.sh-live { width: min(1200px, 100%); }
+
+/* 모두의 추측 (참가자) */
+.sp-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.sp-tabs button { border: 1px solid var(--line); background: transparent; border-radius: 10px; padding: 8px; }
+.sp-tabs button.on { background: var(--night-2); border-color: var(--gold); color: var(--gold); }
+.sp-row .nk { display: block; font-size: .75rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-sub { font-size: .85rem; color: var(--muted); margin: 6px 0 2px; }
