@@ -125,3 +125,20 @@
 .inv-play .hero .big{font-family:var(--f-display);font-size:3.4rem;line-height:1;color:var(--accent)}
 
 @media (prefers-reduced-motion:reduce){.inv .crown{animation:none}.inv .move,.inv .meter span,.inv .crowd span{transition:none}}
+
+/* ---------- 실시간 장 ---------- */
+.inv .clock{font-family:var(--f-num);font-weight:700;font-size:2rem;line-height:1;color:var(--accent)}
+.inv .clock span{font-size:.45em;color:var(--muted);margin-left:2px}
+.inv-host .market{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:18px;align-items:start}
+.inv-host .market .board{grid-template-columns:1fr}
+.inv-host .market .clock{font-size:clamp(3rem,7vw,5rem)}
+@media (max-width:900px){.inv-host .market{grid-template-columns:1fr}}
+.inv-play .prices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 12px;font-size:.95rem}
+.inv-play .prices>span{display:flex;gap:6px;align-items:center}
+.inv-play .quickgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.inv-play .quickgrid .qbtn:last-child{grid-column:1/3}
+.inv-play .qbtn{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:56px;padding:10px 14px;border-radius:12px;border:2px solid var(--c);background:var(--panel);font-size:1.05rem}
+.inv-play .qbtn b{color:var(--c);font-family:var(--f-num)}
+.inv-play .qbtn span{color:var(--muted);font-size:.85rem}
+.inv-play .qbtn:active:not(:disabled){background:var(--panel2)}
+.inv-play details.custom summary{cursor:pointer;color:var(--muted);font-size:.9rem;padding:6px 0}

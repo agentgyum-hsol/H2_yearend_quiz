@@ -1,22 +1,27 @@
 // 반도체왕 임삼성: 운영자(프로젝터) 화면
-// mount(el, ctx) → unmount 함수. ctx = { db, fs, joinUrl? }
-//   fs: Firestore 모듈 함수 { doc, collection, onSnapshot, setDoc, updateDoc, deleteDoc, getDoc, getDocs, writeBatch }
-import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, applyRound, indexSeries, cashOf,
-  won, pct, cls, arrow, esc, rankList, loadCss } from './data.js';
+// mount(el, ctx) → unmount 함수. ctx = { db, fs, gameId, joinUrl? }
+// 진행: 로비 → (라운드마다) 뉴스·시초 주문 → 30초 실시간 장 → 결과 → … → 최종(TOP 5, 우승 확정)
+import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, TOP_N, moveOf, pricePath, valueAt, indexSeries,
+  toMs, won, pct, cls, arrow, esc, rankList, lineChart, loadCss } from './data.js';
+import { watchWinners, pickWinner, otherGameTitle, confirmWinner, clearWinner } from '../../shared/winners.js';
 
-const PHASE_LABEL = { news: '뉴스', invest: '투자 접수', reveal: '결과' };
+const GAME = 'invest';
+const TITLES = { emoji: '이게 내 이모지야', invest: '반도체왕 임삼성', similar: '단어 온도계' };
+const PHASE_LABEL = { news: '뉴스·시초 주문', market: '실시간 장', reveal: '결과' };
 const newRun = () => Date.now().toString(36);
+const T = MARKET_SECONDS;
 
 export function mount(el, ctx) {
   const { db, fs } = ctx;
   loadCss(new URL('./invest.css', import.meta.url).href);
 
-  const roomRef = fs.doc(db, 'rooms', 'invest');
-  const portCol = fs.collection(db, 'rooms', 'invest', 'portfolios');
-  const allocCol = (run, r) => fs.collection(db, 'rooms', 'invest', `allocs_${run}_${r}`);
+  const roomRef = fs.doc(db, 'rooms', GAME);
+  const portCol = fs.collection(db, 'rooms', GAME, 'portfolios');
+  const tradeCol = (run, r) => fs.collection(db, 'rooms', GAME, `trades_${run}_${r}`);
+  const ts = () => (fs.serverTimestamp ? fs.serverTimestamp() : Date.now());
 
-  let room = null, ports = {}, allocs = {}, allocKey = '', unAlloc = null;
-  let ui = { confirm: null, revealed: 0, revealKey: '', busy: false, err: '' };
+  let room = null, ports = {}, trades = [], tradeKey = '', unTrades = null, winners = {};
+  let ui = { confirm: null, revealed: 0, revealKey: '', busy: false, err: '', settling: '' };
   let timer = null;
 
   el.innerHTML = '';
@@ -30,23 +35,52 @@ export function mount(el, ctx) {
 
   /* ---------- 구독 ---------- */
   const unRoom = fs.onSnapshot(roomRef, snap => {
-    if (!snap.exists()) { fs.setDoc(roomRef, { phase: 'lobby', round: 0, runId: newRun(), start: START_MONEY }); return; }
+    if (!snap.exists()) { fs.setDoc(roomRef, { phase: 'lobby', round: 0, runId: newRun() }); return; }
     room = snap.data();
     const key = room.runId + '_' + room.round;
-    if (key !== allocKey) {
-      unAlloc && unAlloc(); allocs = {}; allocKey = key;
-      unAlloc = fs.onSnapshot(allocCol(room.runId, room.round), s => {
-        allocs = {}; s.forEach(d => { allocs[d.id] = d.data(); }); render();
-      });
+    if (key !== tradeKey) {
+      unTrades && unTrades(); trades = []; tradeKey = key;
+      unTrades = fs.onSnapshot(tradeCol(room.runId, room.round), s => { trades = s.docs.map(d => d.data()); render(); });
     }
     if (room.phase === 'reveal' && ui.revealKey !== key) startReveal(key);
     render();
   }, e => showErr(e));
-  const unPorts = fs.onSnapshot(portCol, s => {
-    ports = {}; s.forEach(d => { ports[d.id] = d.data(); }); render();
-  }, e => showErr(e));
+  const unPorts = fs.onSnapshot(portCol, s => { ports = {}; s.forEach(d => { ports[d.id] = d.data(); }); render(); }, e => showErr(e));
+  const unWin = watchWinners(db, fs, w => { winners = w; render(); });
+
+  // 장 중에는 1초마다 다시 그리고, 시간이 다 되면 자동 정산
+  const tickTimer = setInterval(() => {
+    if (room?.phase !== 'market') return;
+    if (elapsedMs() >= (T + 1.5) * 1000 && ui.settling !== tradeKey) settle();
+    render();
+  }, 1000);
 
   function showErr(e) { ui.err = '서버 연결에 문제가 있어요: ' + (e?.message || e); render(); }
+  const elapsedMs = () => Date.now() - (room?.marketStartMs || Date.now());
+  const curTick = () => Math.max(0, Math.min(T, Math.floor(elapsedMs() / 1000)));
+
+  /* ---------- 주문 기록 → 자산 ---------- */
+  // 참가자별 주문을 시간순으로 모아 tick 으로 바꿈. 장 시작 전 주문은 0초(시초가)로 체결.
+  function tradesByPid() {
+    const start = toMs(room.marketStart);
+    const by = {};
+    trades.map(t => ({ ...t, ms: toMs(t.at) ?? t.atMs }))
+      .filter(t => t.ms != null && (!start || t.ms - start <= T * 1000 + 500))
+      .sort((a, b) => a.ms - b.ms)
+      .forEach(t => {
+        const tick = start ? Math.max(0, Math.min(T, Math.floor((t.ms - start) / 1000))) : 0;
+        (by[t.pid] ||= []).push({ tick, alloc: { ...ZERO, ...t.alloc }, ms: t.ms });
+      });
+    return by;
+  }
+  function liveValues(tick) {
+    const by = tradesByPid(), out = {};
+    Object.entries(ports).forEach(([id, p]) => {
+      const v = valueAt(p.value, p.lastAlloc, by[id] || [], room.round, tick);
+      out[id] = { nick: p.nick, value: v, roundRet: (v / p.value - 1) * 100, totalTime: p.totalTime || 0 };
+    });
+    return out;
+  }
 
   /* ---------- 진행 동작 ---------- */
   async function act(fn) {
@@ -58,17 +92,23 @@ export function mount(el, ctx) {
   const go = patch => act(() => fs.updateDoc(roomRef, patch));
 
   function settle() {
+    if (ui.settling === tradeKey) return;
+    ui.settling = tradeKey;
     return act(async () => {
-      const r = room.round, m = ROUNDS[r].move;
+      const r = room.round, by = tradesByPid(), start = toMs(room.marketStart);
       const before = rankList(ports).map(p => p.id);
       const next = {};
       Object.entries(ports).forEach(([id, p]) => {
-        const alloc = allocs[id]?.alloc || p.lastAlloc || ZERO;
-        const v = applyRound(p.value, alloc, m);
-        next[id] = { nick: p.nick, value: v, hist: [...(p.hist || [p.value]), v], lastAlloc: alloc,
-          roundRet: (v / p.value - 1) * 100, prevRank: before.indexOf(id) + 1, submitted: !!allocs[id], settledRound: r };
+        const tr = by[id] || [];
+        const v = valueAt(p.value, p.lastAlloc, tr, r, T);
+        const last = tr[tr.length - 1];
+        // 동점 처리용 결정 시간: 장 시작부터 마지막 주문까지(장 전 주문은 0초). 주문이 없으면 장 전체 시간.
+        const roundTime = last && start ? Math.max(0, Math.min(T * 1000, last.ms - start)) : T * 1000;
+        next[id] = { nick: p.nick, value: v, hist: [...(p.hist || [p.value]), v], lastAlloc: last ? last.alloc : (p.lastAlloc || ZERO),
+          prevAlloc: p.lastAlloc || ZERO, roundRet: (v / p.value - 1) * 100, prevRank: before.indexOf(id) + 1,
+          trades: tr.length, settledRound: r, roundTime, totalTime: (p.totalTime || 0) + roundTime };
       });
-      // 순위를 미리 계산해 각자 문서에 적어 둠: 참가자 폰은 자기 문서 하나만 구독하면 됨
+      // 순위를 각자 문서에 적어 둠: 참가자 폰은 자기 문서 하나만 구독
       const order = rankList(next), total = order.length;
       const b = fs.writeBatch(db);
       order.forEach((p, k) => { const { id, nick, ...rest } = p; b.set(fs.doc(portCol, id), { ...rest, rank: k + 1, total }, { merge: true }); });
@@ -76,32 +116,37 @@ export function mount(el, ctx) {
       await b.commit();
     });
   }
-  function unsettle() { // 결과 취소: 이번 라운드 정산을 되돌리고 투자 접수로
+  function unsettle() { // 결과 취소: 이번 라운드 정산을 되돌리고 뉴스 화면으로 (장을 다시 열 수 있음)
     return act(async () => {
       const b = fs.writeBatch(db);
       Object.entries(ports).forEach(([id, p]) => {
         if (p.settledRound !== room.round || !p.hist || p.hist.length < 2) return;
         const hist = p.hist.slice(0, -1);
-        b.set(fs.doc(portCol, id), { value: hist[hist.length - 1], hist, settledRound: room.round - 1, rank: p.prevRank || null }, { merge: true });
+        b.set(fs.doc(portCol, id), { value: hist[hist.length - 1], hist, lastAlloc: p.prevAlloc || ZERO, settledRound: room.round - 1,
+          rank: p.prevRank || null, totalTime: Math.max(0, (p.totalTime || 0) - (p.roundTime || 0)), roundTime: 0 }, { merge: true });
       });
-      b.update(roomRef, { phase: 'invest' });
+      b.update(roomRef, { phase: 'news', marketStart: null, marketStartMs: null });
       await b.commit();
+      ui.settling = '';
     });
   }
   function resetGame() {
     return act(async () => {
       const b = fs.writeBatch(db);
       Object.keys(ports).forEach(id => b.set(fs.doc(portCol, id),
-        { value: START_MONEY, hist: [START_MONEY], lastAlloc: ZERO, roundRet: 0, prevRank: null, rank: null, total: null, settledRound: -1 }, { merge: true }));
-      b.set(roomRef, { phase: 'lobby', round: 0, runId: newRun(), start: START_MONEY });
+        { value: START_MONEY, hist: [START_MONEY], lastAlloc: ZERO, prevAlloc: ZERO, roundRet: 0, prevRank: null, rank: null, total: null,
+          settledRound: -1, totalTime: 0, roundTime: 0, trades: 0 }, { merge: true }));
+      b.set(roomRef, { phase: 'lobby', round: 0, runId: newRun() });
+      b.delete(fs.doc(db, 'winners', GAME));
       await b.commit();
+      ui.settling = '';
     });
   }
   function clearPlayers() {
     return act(async () => {
       const b = fs.writeBatch(db);
       Object.keys(ports).forEach(id => b.delete(fs.doc(portCol, id)));
-      b.set(roomRef, { phase: 'lobby', round: 0, runId: newRun(), start: START_MONEY });
+      b.set(roomRef, { phase: 'lobby', round: 0, runId: newRun() });
       await b.commit();
     });
   }
@@ -112,15 +157,16 @@ export function mount(el, ctx) {
     timer = setInterval(() => { ui.revealed++; render(); if (ui.revealed > ASSETS.length) clearInterval(timer); }, 900);
   }
 
-  /* ---------- 클릭 위임 ---------- */
+  const finalRows = () => rankList(ports).map((p, k) => ({ ...p, rank: k + 1 }));
+
+  /* ---------- 클릭 ---------- */
   root.addEventListener('click', e => {
     const t = e.target.closest('[data-a]'); if (!t || t.disabled) return;
     const a = t.dataset.a;
-    if (a === 'start') go({ phase: 'news', round: 0 });
-    else if (a === 'open') go({ phase: 'invest' });
+    if (a === 'start') go({ phase: 'news', round: 0, marketStart: null, marketStartMs: null });
+    else if (a === 'open') go({ phase: 'market', marketStart: ts(), marketStartMs: Date.now() });
     else if (a === 'settle') settle();
-    else if (a === 'next') room.round >= ROUNDS.length - 1 ? go({ phase: 'final' }) : go({ phase: 'news', round: room.round + 1 });
-    else if (a === 'back-news') go({ phase: 'news' });
+    else if (a === 'next') room.round >= ROUNDS.length - 1 ? go({ phase: 'final' }) : go({ phase: 'news', round: room.round + 1, marketStart: null, marketStartMs: null });
     else if (a === 'unsettle') unsettle();
     else if (a === 'back-reveal') go({ phase: 'reveal' });
     else if (a === 'skip') { clearInterval(timer); ui.revealed = 99; render(); }
@@ -128,69 +174,64 @@ export function mount(el, ctx) {
     else if (a === 'cancel') { ui.confirm = null; render(); }
     else if (a === 'reset') resetGame();
     else if (a === 'clear') clearPlayers();
+    else if (a === 'confirm-win') act(async () => { const p = pickWinner(finalRows(), winners, GAME); if (p.winner) await confirmWinner(db, fs, GAME, p.winner); });
+    else if (a === 'unconfirm-win') act(() => clearWinner(db, fs, GAME));
   });
 
   /* ---------- 렌더 ---------- */
   function render() {
     if (!room) { $('stage').innerHTML = '<p class="muted">게임 정보를 불러오는 중…</p>'; return; }
     renderTicker(); renderBar();
-    const v = { lobby: vLobby, news: vNews, invest: vInvest, reveal: vReveal, final: vFinal }[room.phase] || vLobby;
+    const v = { lobby: vLobby, news: vNews, market: vMarket, reveal: vReveal, final: vFinal }[room.phase] || vLobby;
     $('stage').innerHTML = (ui.err ? `<p class="warn" role="alert" style="margin-bottom:16px">${esc(ui.err)}</p>` : '') + v();
   }
 
-  function settledUpto() {
-    if (!room || room.phase === 'lobby') return -1;
-    if (room.phase === 'reveal' || room.phase === 'final') return room.round;
-    return room.round - 1;
-  }
-
   function renderTicker() {
-    const upto = settledUpto();
-    const hideLast = room.phase === 'reveal' && ui.revealed <= ASSETS.length;
     let h = '<div class="brand">반도체왕 임삼성</div>';
+    const hideLast = room.phase === 'reveal' && ui.revealed <= ASSETS.length;
+    const upto = room.phase === 'lobby' ? -1 : (room.phase === 'reveal' || room.phase === 'final') ? room.round : room.round - 1;
     INVEST.forEach((a, k) => {
-      let u = upto; if (hideLast && k >= ui.revealed) u--;
-      const arr = indexSeries(a.id, u), n = arr.length - 1, ch = n ? (arr[n] / arr[n - 1] - 1) * 100 : 0;
-      h += `<div class="tick"><span class="dot" style="background:${a.color}"></span><b>${a.short}</b><span class="num">${arr[n].toFixed(1)}</span><span class="num ${cls(ch)}">${n ? arrow(ch) + ' ' + pct(Math.abs(ch), false) : ''}</span></div>`;
+      const arr = indexSeries(a.id, hideLast && k >= ui.revealed ? upto - 1 : upto);
+      let v = arr[arr.length - 1], prev = arr.length > 1 ? arr[arr.length - 2] : v;
+      if (room.phase === 'market') { prev = v; v = v * pricePath(room.round, a.id)[curTick()]; }
+      const ch = (v / prev - 1) * 100, show = arr.length > 1 || room.phase === 'market';
+      h += `<div class="tick"><span class="dot" style="background:${a.color}"></span><b>${a.short}</b><span class="num">${v.toFixed(1)}</span><span class="num ${cls(ch)}">${show ? arrow(ch) + ' ' + pct(Math.abs(ch), false) : ''}</span></div>`;
     });
     $('ticker').innerHTML = h;
   }
 
   function confirmBox(k, q, yes) {
-    return ui.confirm === k
-      ? `<span class="confirm">${q} <button class="btn" data-a="${k}">${yes}</button><button class="btn ghost" data-a="cancel">취소</button></span>`
-      : '';
+    return ui.confirm === k ? `<span class="confirm">${q} <button class="btn" data-a="${k}">${yes}</button><button class="btn ghost" data-a="cancel">취소</button></span>` : '';
   }
 
   function renderBar() {
     const n = Object.keys(ports).length, busy = ui.busy ? 'disabled' : '';
     let steps = '', btns = '';
     if (room.phase === 'lobby') {
-      steps = `<span class="muted">참가자 ${n}명 · ${ROUNDS.length}라운드</span>`;
+      steps = `<span class="muted">참가자 ${n}명 · ${ROUNDS.length}라운드 · 라운드마다 ${T}초 장</span>`;
       btns = confirmBox('clear', '참가자 명단을 모두 지울까요?', '예, 지우기') ||
         `<button class="btn ghost" data-a="ask" data-k="clear" ${n ? '' : 'disabled'}>참가자 비우기</button>`;
       btns += `<button class="btn primary" data-a="start" ${n < 1 || ui.busy ? 'disabled' : ''}>게임 시작</button>`;
     } else if (room.phase === 'final') {
       steps = '<span class="step on">최종 결과</span>';
-      btns = `<button class="btn ghost" data-a="back-reveal" ${busy}>마지막 라운드 결과로</button>`;
+      btns = `<button class="btn ghost" data-a="back-reveal" ${busy}>마지막 라운드 결과로</button>` +
+        (winners[GAME] ? `<button class="btn ghost" data-a="unconfirm-win" ${busy}>우승 확정 취소</button>` : '');
     } else {
       steps = `<span class="step">R${room.round + 1}/${ROUNDS.length}</span>` +
-        ['news', 'invest', 'reveal'].map(p => `<span class="step ${p === room.phase ? 'on' : ''}">${PHASE_LABEL[p]}</span>`).join('');
-      if (room.phase === 'news') btns = `<button class="btn primary" data-a="open" ${busy}>투자 접수 열기</button>`;
-      if (room.phase === 'invest') {
-        const sub = Object.keys(allocs).filter(id => ports[id]).length;
-        btns = `<button class="btn ghost" data-a="back-news" ${busy}>뉴스로</button>` +
-          (confirmBox('settle', `${n - sub}명이 아직 안 냈어요. 지난 비율로 마감할까요?`, '예, 마감') ||
-           `<button class="btn primary" data-a="${sub < n ? 'ask' : 'settle'}" data-k="settle" ${busy}>마감하고 결과 공개</button>`);
+        ['news', 'market', 'reveal'].map(p => `<span class="step ${p === room.phase ? 'on' : ''}">${PHASE_LABEL[p]}</span>`).join('');
+      if (room.phase === 'news') btns = `<button class="btn primary" data-a="open" ${busy}>${T}초 장 시작!</button>`;
+      if (room.phase === 'market') {
+        const over = elapsedMs() >= T * 1000;
+        btns = `<button class="btn primary" data-a="settle" ${over && !ui.busy ? '' : 'disabled'}>${over ? '마감 · 결과 공개' : '장 진행 중…'}</button>`;
       }
       if (room.phase === 'reveal') {
         const done = ui.revealed > ASSETS.length;
-        btns = (confirmBox('unsettle', '이번 라운드 정산을 취소하고 투자 접수로 돌아갈까요?', '예, 취소') ||
+        btns = (confirmBox('unsettle', '이번 라운드를 취소하고 장을 다시 열까요?', '예, 취소') ||
           `<button class="btn ghost" data-a="ask" data-k="unsettle" ${busy}>결과 취소</button>`) +
           `<button class="btn primary" data-a="next" ${done && !ui.busy ? '' : 'disabled'}>${room.round >= ROUNDS.length - 1 ? '최종 순위 발표' : '다음 라운드'}</button>`;
       }
     }
-    const reset = confirmBox('reset', '모든 참가자의 자산을 처음으로 되돌릴까요?', '예, 처음부터') ||
+    const reset = confirmBox('reset', '모든 참가자의 자산과 우승 확정을 처음으로 되돌릴까요?', '예, 처음부터') ||
       (room.phase !== 'lobby' ? `<button class="btn ghost" data-a="ask" data-k="reset" ${busy}>처음부터</button>` : '');
     $('bar').innerHTML = `<div class="steps">${steps}</div>${reset}${btns}`;
   }
@@ -201,110 +242,120 @@ export function mount(el, ctx) {
       <div class="stack">
         <div class="eyebrow">송년회 투자 배틀 · 개인전</div>
         <h1>반도체왕 <span style="color:var(--accent)">임삼성</span></h1>
-        <p class="muted" style="font-size:1.15rem;max-width:60ch">모두 ${won(START_MONEY)}으로 시작합니다. 라운드마다 뉴스를 보고 휴대폰에서 DRAM, NAND, 금, 비트코인에 비율을 나눠 투자하세요. ${ROUNDS.length}라운드 뒤 자산이 가장 많은 사람이 올해의 반도체왕입니다.</p>
+        <p class="muted" style="font-size:1.15rem;max-width:60ch">모두 ${won(START_MONEY)}으로 시작합니다. 라운드마다 뉴스를 보고 시초 주문을 넣은 뒤, ${T}초 동안 열리는 실시간 장에서 언제든 종목을 갈아탈 수 있어요. ${ROUNDS.length}라운드 뒤 자산이 가장 많은 사람이 올해의 반도체왕! 마지막 라운드는 등락 2배 더블 찬스입니다.</p>
         <div class="card stack" style="gap:10px">
           ${ASSETS.map(a => `<div class="asset-li"><div class="asset-ic" style="background:${a.color}">${a.short}</div><div><b>${a.name}</b> <span class="muted" style="font-size:.9rem">${a.desc}</span></div></div>`).join('')}
         </div>
       </div>
       <div class="card stack">
-        <div class="eyebrow">입장한 사람</div>
+        <div class="eyebrow">이 게임에 들어온 사람</div>
         <div class="big-count num">${list.length}<span style="font-size:.4em;color:var(--muted)"> 명</span></div>
-        ${ctx.joinUrl ? `<p>휴대폰으로 접속: <b class="num" style="overflow-wrap:anywhere">${esc(ctx.joinUrl)}</b></p>` : ''}
-        <div class="names">${list.map(p => `<span class="name">${esc(p.nick)}</span>`).join('') || '<span class="muted">아직 아무도 없어요. QR로 들어오면 여기에 이름이 뜹니다.</span>'}</div>
+        <div class="names">${list.map(p => `<span class="name">${esc(p.nick)}</span>`).join('') || '<span class="muted">참가자 폰이 이 게임 화면으로 바뀌면 여기에 이름이 뜹니다.</span>'}</div>
       </div>
     </div>`;
   }
 
-  function newsBlock(r) {
-    return `<article class="news"><div class="when">${r.when}</div><h2>${r.title}</h2><ul>${r.bullets.map(b => `<li>${b}</li>`).join('')}</ul></article>`;
+  function doubleBanner() {
+    return `<div class="twist" style="border-color:var(--accent);background:rgba(255,196,61,.12);font-size:1.3rem"><b style="color:var(--accent)">더블 찬스!</b> 이번 라운드는 DRAM, NAND, 금, 비트코인이 평소의 2배로 움직입니다.</div>`;
   }
 
-  function board(limit) {
-    const list = rankList(ports).slice(0, limit);
-    return `<div class="board">${list.map((p, k) => {
-      const d = p.prevRank ? p.prevRank - (k + 1) : 0;
+  function board(rows, limit, mode) {
+    return `<div class="board">${rows.slice(0, limit).map((p, k) => {
+      const d = mode === 'reveal' && p.prevRank ? p.prevRank - (k + 1) : 0;
+      const sub = mode === 'total' ? pct((p.value / START_MONEY - 1) * 100) : pct(p.roundRet || 0);
+      const subCls = mode === 'total' ? cls(p.value - START_MONEY) : cls(p.roundRet || 0);
       return `<div class="brow ${k < 3 ? 'top' : ''}"><span class="rk">${k + 1}</span>
         <span class="nm">${esc(p.nick)} ${d ? `<span class="num ${cls(d)}" style="font-size:.8rem">${arrow(d)}${Math.abs(d)}</span>` : ''}</span>
-        <span class="vv num">${won(p.value)}<br><span class="${cls(p.roundRet || 0)}">${room.phase === 'reveal' ? pct(p.roundRet || 0) : pct((p.value / START_MONEY - 1) * 100)}</span></span></div>`;
+        <span class="vv num">${won(p.value)}<br><span class="${subCls}">${sub}</span></span></div>`;
     }).join('')}</div>`;
   }
 
   function vNews() {
     const r = ROUNDS[room.round];
+    const ordered = new Set(trades.map(t => t.pid)).size, n = Object.keys(ports).length;
     return `<div class="stack" style="gap:24px">
       <div class="eyebrow">라운드 ${room.round + 1} / ${ROUNDS.length} · 속보</div>
-      ${newsBlock(r)}
+      ${r.double ? doubleBanner() : ''}
+      <article class="news"><div class="when">${r.when}</div><h2>${r.title}</h2><ul>${r.bullets.map(b => `<li>${b}</li>`).join('')}</ul></article>
       <div class="boss"><div class="face" aria-hidden="true">임</div><div class="bubble"><b>임삼성 회장</b><br>${r.boss}</div></div>
-      ${room.round > 0 ? `<div class="stack" style="gap:10px"><div class="eyebrow">현재 TOP 10</div>${board(10)}</div>` : ''}
+      <div class="card row" style="justify-content:space-between"><b>시초 주문 <span class="num" style="color:var(--accent)">${ordered}</span> / ${n}명</b><span class="muted">폰에서 미리 비율을 넣어 두면 장 시작과 동시에 체결돼요. 안 넣으면 지난 라운드 비율 그대로.</span></div>
+      ${room.round > 0 ? `<div class="stack" style="gap:10px"><div class="eyebrow">현재 TOP 10</div>${board(rankList(ports), 10, 'total')}</div>` : ''}
     </div>`;
   }
 
-  function vInvest() {
-    const r = ROUNDS[room.round];
-    const n = Object.keys(ports).length;
-    const subs = Object.entries(allocs).filter(([id]) => ports[id]).map(([, a]) => a.alloc || ZERO);
-    const avg = {}; ASSETS.forEach(a => { avg[a.id] = 0; });
-    subs.forEach(a => { INVEST.forEach(x => { avg[x.id] += a[x.id] || 0; }); avg.cash += cashOf(a); });
-    ASSETS.forEach(a => { avg[a.id] = subs.length ? avg[a.id] / subs.length : 0; });
-    const p = n ? Math.round(subs.length / n * 100) : 0;
-    return `<div class="stack" style="gap:24px">
-      <div class="eyebrow">라운드 ${room.round + 1} · 투자 접수 중</div>
-      <h2>${r.title}</h2>
-      <div class="card stack" style="gap:12px">
-        <div class="row" style="justify-content:space-between"><b style="font-size:1.3rem">제출 <span class="num" style="color:var(--accent)">${subs.length}</span> / ${n}명</b><span class="muted">마감 전까지 몇 번이든 바꿀 수 있어요</span></div>
-        <div class="meter"><span style="width:${p}%"></span></div>
+  function vMarket() {
+    const r = ROUNDS[room.round], tick = curTick(), left = Math.max(0, T - Math.floor(elapsedMs() / 1000));
+    const series = INVEST.map(a => ({ color: a.color, data: pricePath(room.round, a.id), w: 3.5 }));
+    const live = rankList(liveValues(tick));
+    return `<div class="stack" style="gap:20px">
+      <div class="row" style="justify-content:space-between">
+        <div class="eyebrow">라운드 ${room.round + 1} · 실시간 장${r.double ? ' · 더블 찬스 ×2' : ''}</div>
+        <span class="muted">주문 ${trades.length}건</span>
       </div>
-      <div class="card stack" style="gap:12px">
-        <b>모두의 평균 포트폴리오</b>
-        ${subs.length ? `<div class="crowd">${ASSETS.map(a => `<span style="flex-grow:${avg[a.id].toFixed(2)};background:${a.color}">${avg[a.id] >= 8 ? a.short + ' ' + Math.round(avg[a.id]) + '%' : ''}</span>`).join('')}</div>
-          <div class="row" style="gap:16px">${ASSETS.map(a => `<span class="row" style="gap:6px"><span class="dot" style="background:${a.color}"></span>${a.name} <span class="num muted">${Math.round(avg[a.id])}%</span></span>`).join('')}</div>`
-          : '<p class="muted">첫 제출을 기다리는 중…</p>'}
+      <div class="market">
+        <div class="card stack" style="gap:12px;min-width:0">
+          <div class="row" style="justify-content:space-between;align-items:flex-end">
+            <h2 style="font-size:clamp(1.3rem,2.6vw,1.9rem)">${r.title}</h2>
+            <div class="clock num" style="color:${left <= 5 ? 'var(--up)' : 'var(--accent)'}">${left}<span>초</span></div>
+          </div>
+          <div style="color:var(--muted)">${lineChart(series, T + 1, tick, { h: 300 })}</div>
+          <div class="row" style="gap:18px">${INVEST.map(a => { const c = (pricePath(room.round, a.id)[tick] - 1) * 100; return `<span class="row" style="gap:6px;font-size:1.15rem"><span class="dot" style="background:${a.color}"></span><b>${a.short}</b><span class="num ${cls(c)}">${arrow(c)} ${pct(Math.abs(c), false)}</span></span>`; }).join('')}</div>
+        </div>
+        <div class="stack" style="gap:10px;min-width:0"><div class="eyebrow">실시간 TOP 10 · 이번 라운드</div>${board(live, 10, 'round')}</div>
       </div>
     </div>`;
-  }
-
-  function spark(arr, color, hideLast) {
-    const a = hideLast ? arr.slice(0, -1) : arr; if (a.length < 2) return '<svg viewBox="0 0 100 44" aria-hidden="true"></svg>';
-    const mn = Math.min(...arr) * .95, mx = Math.max(...arr) * 1.05, n = arr.length - 1;
-    const pts = a.map((v, i) => [i / n * 96 + 2, 42 - (v - mn) / (mx - mn) * 38]);
-    const [lx, ly] = pts[pts.length - 1];
-    return `<svg viewBox="0 0 100 44" preserveAspectRatio="none" aria-hidden="true"><polyline fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" points="${pts.map(q => q.join(',')).join(' ')}"/><circle cx="${lx}" cy="${ly}" r="2.5" fill="${color}"/></svg>`;
   }
 
   function vReveal() {
-    const r = ROUNDS[room.round], m = r.move, done = ui.revealed > ASSETS.length;
+    const r = ROUNDS[room.round], m = moveOf(room.round), done = ui.revealed > ASSETS.length;
     const cards = ASSETS.map((a, k) => {
       const on = k < ui.revealed;
-      const sp = a.id === 'cash' ? '<svg viewBox="0 0 100 44" aria-hidden="true"></svg>' : spark(indexSeries(a.id, room.round), a.color, !on);
+      const sp = a.id === 'cash' ? '' : `<div style="color:var(--muted)">${lineChart([{ color: a.color, data: pricePath(room.round, a.id) }], T + 1, on ? T : 0, { h: 60 })}</div>`;
       return `<div class="move ${on ? 'shown' : ''}"><div class="row" style="gap:8px;font-weight:700"><span class="dot" style="background:${a.color}"></span>${a.name}</div>
         <div class="pct ${on ? cls(m[a.id]) : 'flat'}">${on ? arrow(m[a.id]) + ' ' + pct(Math.abs(m[a.id]), false) : '??'}</div>${sp}</div>`;
     }).join('');
     return `<div class="stack" style="gap:22px">
-      <div class="row" style="justify-content:space-between"><div class="eyebrow">라운드 ${room.round + 1} · 결과 공개</div>${done ? '' : '<button class="btn ghost" data-a="skip">한 번에 공개</button>'}</div>
-      <h2 style="font-size:clamp(1.4rem,3vw,2rem)">${r.title}</h2>
+      <div class="row" style="justify-content:space-between"><div class="eyebrow">라운드 ${room.round + 1} · 장 마감</div>${done ? '' : '<button class="btn ghost" data-a="skip">한 번에 공개</button>'}</div>
+      <h2 style="font-size:clamp(1.4rem,3vw,2rem)">${r.title}${r.double ? ' <span style="color:var(--accent)">· 더블 찬스 ×2</span>' : ''}</h2>
       <div class="moves">${cards}</div>
-      ${done ? `<div class="twist">${r.twist}</div><div class="stack" style="gap:10px"><div class="eyebrow">현재 TOP 12 · 이번 라운드 수익률</div>${board(12)}</div>` : ''}
+      ${done ? `<div class="twist">${r.twist}</div><div class="stack" style="gap:10px"><div class="eyebrow">현재 TOP 10 · 이번 라운드 수익률</div>${board(rankList(ports), 10, 'reveal')}</div>` : ''}
     </div>`;
   }
 
   function vFinal() {
-    const list = rankList(ports), top = list.slice(0, 3);
-    if (!list.length) return '<p class="muted">참가자가 없어요.</p>';
-    const pod = [1, 0, 2].filter(i => top[i]).map(i => {
-      const p = top[i];
-      return `<div class="pod p${i + 1}">${i === 0 ? '<div class="crown" aria-hidden="true">👑</div>' : ''}<div class="tn">${esc(p.nick)}</div><div class="num">${won(p.value)}</div><div class="num ${cls(p.value - START_MONEY)}">${pct((p.value / START_MONEY - 1) * 100)}</div><div class="block">${i + 1}</div></div>`;
-    }).join('');
-    let best = null;
-    list.forEach(p => (p.hist || []).forEach((v, i) => { if (i && (!best || v / p.hist[i - 1] > best.x)) best = { x: v / p.hist[i - 1], p, i }; }));
-    return `<div class="stack" style="gap:30px;text-align:center">
-      <div class="stack" style="gap:8px"><div class="eyebrow">최종 결과</div><h1>올해의 반도체왕은<br><span style="color:var(--accent)">${esc(list[0].nick)}</span>!</h1></div>
-      <div class="podium">${pod}</div>
-      ${best ? `<p class="muted">한 라운드 최고 수익: <b style="color:var(--fg)">${esc(best.p.nick)}</b>, 라운드 ${best.i}에서 <span class="num up">${pct((best.x - 1) * 100)}</span></p>` : ''}
-      <div style="text-align:left" class="stack"><div class="eyebrow">전체 순위</div>${board(list.length)}</div>
+    const rows = finalRows();
+    if (!rows.length) return '<p class="muted">참가자가 없어요.</p>';
+    const pick = pickWinner(rows, winners, GAME), confirmed = winners[GAME];
+    const other = id => otherGameTitle(winners, id, GAME, TITLES);
+    let head;
+    if (confirmed) {
+      const w = rows.find(x => x.id === confirmed.pid);
+      head = `<div class="crown" aria-hidden="true" style="font-size:4.5rem">👑</div>
+        <div class="eyebrow">올해의 반도체왕</div>
+        <h1 style="color:var(--accent);font-size:clamp(3.2rem,9vw,6.5rem);overflow-wrap:anywhere">${esc(confirmed.nick)}</h1>
+        ${w ? `<div class="num" style="font-size:clamp(1.5rem,3.6vw,2.4rem);font-weight:700">${won(w.value)} <span class="${cls(w.value - START_MONEY)}">${pct((w.value / START_MONEY - 1) * 100)}</span></div>` : ''}`;
+    } else {
+      head = `<div class="eyebrow">최종 결과</div><h1>올해의 반도체왕은…</h1>
+        ${pick.winner ? `<p style="font-size:1.2rem">${pick.skipped.length ? `${pick.skipped.map(x => `<b>${esc(x.nick)}</b>`).join(', ')} 님은 이미 다른 게임에서 우승해서, ` : ''}우승 후보는 <b style="color:var(--accent)">${esc(pick.winner.nick)}</b> 님 (${pick.winner.rank}위)</p>
+          <div><button class="btn primary" data-a="confirm-win" ${ui.busy ? 'disabled' : ''}>${esc(pick.winner.nick)} 님 우승 확정</button></div>` : '<p class="muted">우승할 수 있는 사람이 없어요.</p>'}`;
+    }
+    const winId = confirmed ? confirmed.pid : pick.winner?.id;
+    return `<div class="stack" style="gap:26px;text-align:center;align-items:center">
+      ${head}
+      <div class="stack" style="gap:8px;width:100%;max-width:760px;text-align:left">
+        <div class="eyebrow">TOP ${TOP_N}</div>
+        ${rows.slice(0, TOP_N).map(p => {
+          const o = other(p.id), isW = winId === p.id;
+          return `<div class="brow ${isW ? 'top' : ''}" style="grid-template-columns:48px minmax(0,1fr) auto;padding:12px 16px">
+            <span class="rk" style="font-size:1.6rem">${p.rank}</span>
+            <span class="nm" style="font-size:1.25rem">${esc(p.nick)}${isW && confirmed ? ' 👑' : ''}${o ? ` <span class="muted" style="font-size:.85rem;font-weight:400">${esc(o)} 우승자</span>` : ''}</span>
+            <span class="vv num" style="font-size:1.1rem">${won(p.value)}<br><span class="${cls(p.value - START_MONEY)}">${pct((p.value / START_MONEY - 1) * 100)}</span></span></div>`;
+        }).join('')}
+      </div>
     </div>`;
   }
 
   return function unmount() {
-    clearInterval(timer); unRoom(); unPorts(); unAlloc && unAlloc(); el.innerHTML = '';
+    clearInterval(timer); clearInterval(tickTimer); unRoom(); unPorts(); unWin(); unTrades && unTrades(); el.innerHTML = '';
   };
 }
