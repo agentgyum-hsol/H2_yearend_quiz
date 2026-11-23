@@ -1,4 +1,4 @@
-// 단어 온도계: 운영자·참가자 화면 공통
+// H2맨틀: 운영자·참가자 화면 공통
 //
 // 규칙: 운영자가 라운드마다 비밀 단어를 정합니다. 참가자는 단어를 추측하고, 추측할 때마다
 // 비밀 단어와의 유사도(온도)와 순위를 받습니다. 가까운 단어를 따라가 비밀 단어를 맞히면 됩니다.
@@ -15,7 +15,7 @@
 
 export const ROOM = ["rooms", "similar"];
 export const GAME_ID = "similar";
-export const TITLE = "단어 온도계";
+export const TITLE = "H2맨틀";
 export const ROUNDS = 3;                 // [가정] 3라운드
 export const DURATION_MS = 5 * 60_000;   // [가정] 라운드당 5분
 export const EXTEND_MS = 60_000;         // 1분 연장 버튼

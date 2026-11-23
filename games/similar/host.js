@@ -1,4 +1,4 @@
-// 단어 온도계 운영자 화면 (프로젝터용). 비밀 단어를 갖고 있고, 참가자 추측을 채점합니다.
+// H2맨틀 운영자 화면 (프로젝터용). 비밀 단어를 갖고 있고, 참가자 추측을 채점합니다.
 import { ROOM, GAME_ID, TITLE, ROUNDS, DURATION_MS, EXTEND_MS, GRACE_MS, HINT_RANKS,
   solvePoints, nearPoints, loadStyle, esc, norm, fmtSim, fmtRank, heat, ranked } from "./common.js";
 import { loadEngine, SUGGEST } from "./engine.js";
@@ -32,7 +32,7 @@ export function mount(el, { db, fs }) {
   const unsubs = [];
 
   el.innerHTML = `<div class="sh">
-    <div class="sh-top"><div class="display" style="font-size:1.5rem">단어 <span style="color:var(--dancheong)">온도계</span> 🌡️</div><div class="meta" id="shMeta"></div></div>
+    <div class="sh-top"><div class="display" style="font-size:1.5rem">H2<span style="color:var(--dancheong)">맨틀</span> 🌡️</div><div class="meta" id="shMeta"></div></div>
     <div class="sh-progress"><i id="shBar" style="width:0%"></i></div>
     <div class="sh-stage" id="shStage" aria-live="polite"></div>
     <div class="sh-controls" id="shCtl"></div>
@@ -263,7 +263,7 @@ export function mount(el, { db, fs }) {
       $("shMeta").innerHTML = `<span class="pill">${ROUNDS}라운드 · 라운드당 ${DURATION_MS / 60000}분</span><span class="pill">참가 ${players.length}명</span>`;
       $("shStage").innerHTML = `
         <div class="emoji" style="font-size:clamp(2.4rem,7vw,4.5rem)" aria-hidden="true">🌡️🔤🕵️</div>
-        <h1 class="sh-title">단어 <span>온도계</span></h1>
+        <h1 class="sh-title">H2<span>맨틀</span></h1>
         <p class="sh-mean">비밀 단어가 하나 있어요. 아무 단어나 휴대폰에 넣으면 비밀 단어와 얼마나 가까운지 <b>온도(유사도)</b>와 <b>순위</b>가 나옵니다.<br>
         뜨거운 단어를 따라가 비밀 단어를 맞히세요. 추측은 몇 번이든 괜찮아요.<br>
         먼저 맞힐수록 높은 점수 (100점부터), 못 맞혀도 1000위 안에 가까이 가면 부분 점수.</p>

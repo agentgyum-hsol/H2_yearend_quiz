@@ -1,4 +1,4 @@
-// 단어 온도계 참가자 화면 (휴대폰). 단어 목록(약 200KB)만 받아 모르는 단어는 보내지 않고,
+// H2맨틀 참가자 화면 (휴대폰). 단어 목록(약 200KB)만 받아 모르는 단어는 보내지 않고,
 // 유사도는 운영자 화면이 채점해 feedback 문서로 돌려줍니다.
 import { ROOM, GAME_ID, ROUNDS, DURATION_MS, GRACE_MS, MIN_GAP_MS, loadStyle, esc, norm, fmtSim, fmtRank, heat, loadWords } from "./common.js";
 import { ms } from "../../shared/db.js";
@@ -49,7 +49,7 @@ export function mount(el, { db, fs, player }) {
     if (room.phase === "lobby") {
       root.innerHTML = `<div class="sp-center">
         <div class="emoji" style="font-size:3rem" aria-hidden="true">🌡️🔤🕵️</div>
-        <p class="sp-big">단어 온도계</p>
+        <p class="sp-big">H2맨틀</p>
         <p class="muted" style="margin:0">비밀 단어를 맞히는 게임이에요. 아무 단어나 넣으면 비밀 단어와 얼마나 가까운지 온도와 순위가 나와요. 뜨거운 단어를 따라가세요. 추측 횟수는 무제한, 먼저 맞힐수록 점수가 높아요.</p>
         <p class="muted">곧 시작합니다</p></div>`;
     }
