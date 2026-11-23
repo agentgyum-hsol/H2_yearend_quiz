@@ -4,5 +4,6 @@
 export const GAMES = [
   { id: "invest", title: "반도체왕 임삼성", sub: "DRAM, NAND, 금, 비트코인에 투자해 투자왕 되기", emoji: "💾📈🪙" },
   { id: "emoji", title: "이게 내 이모지야", sub: "이모지 보고 속담 맞히기", emoji: "🐋⚔️🦐" },
+  { id: "similar", title: "단어 온도계", sub: "비밀 단어와 얼마나 가까운지 온도로 추리하기", emoji: "🌡️🔤" },
 ];
 export const EVENT_ID = "main";

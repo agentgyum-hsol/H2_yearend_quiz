@@ -47,13 +47,22 @@ service cloud.firestore {
         && request.resource.data.text is string && request.resource.data.text.size() <= 60;
       allow delete: if signedIn();
     }
+    // 단어 온도계 추측: 그 참가자를 지금 쓰는 사람만 씀
+    match /rooms/similar/guesses/{gid} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && ownsPlayer(request.resource.data.pid)
+        && request.resource.data.round is int
+        && request.resource.data.word is string && request.resource.data.word.size() <= 20;
+      allow delete: if signedIn();
+    }
     // 그 밖의 게임 상태 (운영자 화면이 씀)
     match /rooms/{room} {
       allow read, write: if signedIn();
     }
     match /rooms/{room}/{sub}/{docId} {
       allow read: if signedIn();
-      allow write: if signedIn() && !(room == "emoji" && sub == "answers");
+      allow write: if signedIn() && !(room == "emoji" && sub == "answers") && !(room == "similar" && sub == "guesses");
     }
   }
 }
