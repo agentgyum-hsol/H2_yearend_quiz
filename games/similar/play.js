@@ -1,6 +1,6 @@
 // H2맨틀 참가자 화면 (휴대폰). 단어 목록(약 200KB)만 받아 모르는 단어는 보내지 않고,
 // 유사도는 운영자 화면이 채점해 feedback 문서로 돌려줍니다.
-import { ROOM, GAME_ID, ROUNDS, DURATION_MS, GRACE_MS, MIN_GAP_MS, loadStyle, esc, norm, fmtSim, fmtRank, heat, loadWords } from "./common.js";
+import { ROOM, GAME_ID, ROUNDS, DURATION_MS, GRACE_MS, MIN_GAP_MS, loadStyle, esc, norm, resolve, fmtSim, fmtRank, heat, loadWords } from "./common.js";
 import { ms } from "../../shared/db.js";
 
 export function mount(el, { db, fs, player }) {
@@ -10,13 +10,13 @@ export function mount(el, { db, fs, player }) {
   let fbUnsub = null, fbRound = null, tick = null, drawnKey = null, lastSent = 0;
   let pending = [];   // 보냈지만 아직 채점 결과가 오지 않은 단어
   let lastWord = null, msg = "";
-  let feed = null, tab = "mine";   // 모두의 추측 (운영자 화면이 2초마다 갱신)
+  let feed = null;   // 모두의 추측 (운영자 화면이 2초마다 갱신)
   const unsubs = [];
 
   el.innerHTML = `<div class="sp" id="sp"></div>`;
   const root = el.querySelector("#sp");
 
-  loadWords().then(w => { words = new Set(w); render(); }, () => { wordErr = true; render(); });
+  loadWords().then(d => { words = new Set(d.words); render(); }, () => { wordErr = true; render(); });
 
   unsubs.push(fs.onSnapshot(roomRef, s => { room = s.exists() ? s.data() : null; watchMine(); render(); }));
   unsubs.push(fs.onSnapshot(fs.doc(db, ...ROOM, "board", "current"), s => { board = s.exists() ? s.data() : null; render(); }));
@@ -61,7 +61,8 @@ export function mount(el, { db, fs, player }) {
       const keep = typing ? typing.value : "";
       root.innerHTML = `
         <div class="sp-meta"><span class="pill">${room.round + 1} / ${ROUNDS} 라운드</span><span class="sp-timer" id="spTimer"></span></div>
-        ${(room.hints || []).length ? `<div class="sp-hints">${room.hints.map(h => `<span><small>${h.r}위</small> ${esc(h.w)}</span>`).join("")}</div>` : ""}
+        ${(room.hints || []).length ? `<div class="sp-hints">${room.hints.map(h => `<span><small>💡 ${h.r}위 힌트</small> ${esc(h.w)}</span>`).join("")}</div>` : ""}
+        <div class="sp-top2" id="spTop2"></div>
         <form id="spForm" autocomplete="off">
           <input class="field" id="spText" maxlength="12" placeholder="${words ? "단어를 넣어 보세요" : wordErr ? "단어 목록을 못 받았어요. 새로고침해 주세요" : "단어 목록 받는 중…"}" enterkeyhint="send" autocapitalize="off" spellcheck="false" ${words ? "" : "disabled"}>
           <button class="btn primary" id="spBtn" type="submit" ${words ? "" : "disabled"}>추측</button>
@@ -69,12 +70,11 @@ export function mount(el, { db, fs, player }) {
         <div class="sp-msg" id="spMsg" role="status"></div>
         <div id="spSolved"></div>
         <div class="sp-last" id="spLast"></div>
-        <div class="sp-tabs" role="tablist"><button type="button" data-tab="mine" role="tab">내 추측</button><button type="button" data-tab="all" role="tab">모두의 추측</button></div>
+        <div class="sp-sub">모두의 추측 <span class="sp-me-key">내 추측</span></div>
         <div class="sp-head"><span>#</span><span>단어</span><span>유사도</span><span>순위</span></div>
         <div class="sp-list" id="spList"></div>`;
       const inp = root.querySelector("#spText"); inp.value = keep;
       root.querySelector("#spForm").onsubmit = submit;
-      root.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { tab = b.dataset.tab; renderList(); });
       tick = setInterval(renderTimer, 250); renderTimer(); renderList();
     }
 
@@ -109,12 +109,14 @@ export function mount(el, { db, fs, player }) {
   async function submit(e) {
     e.preventDefault();
     const input = root.querySelector("#spText");
-    const w = norm(input.value);
+    const typed = norm(input.value);
     const say = t => { msg = t; const m = root.querySelector("#spMsg"); if (m) m.textContent = t; };
-    if (!w || room?.phase !== "round") return;
+    if (!typed || room?.phase !== "round") return;
     if (timeUp()) return say("시간이 끝났어요");
     if (solved()) return say("이미 맞혔어요! 다음 라운드를 기다려 주세요");
-    if (!words.has(w)) { input.select(); return say(`"${w}"는 단어 목록에 없어요. 다른 단어를 넣어 주세요 (횟수에 안 들어가요)`); }
+    const hit = resolve(typed, x => words.has(x));
+    if (!hit) { input.value = ""; return say(`"${typed}"는 단어 목록에 없어요. 다른 단어를 넣어 주세요 (횟수에 안 들어가요)`); }
+    const w = hit.w;
     const mine = fb?.list || [];
     if (mine.some(x => x.w === w) || pending.includes(w)) { lastWord = w; input.value = ""; renderList(); return say(`"${w}"는 이미 넣은 단어예요`); }
     const wait = lastSent + MIN_GAP_MS - Date.now();
@@ -123,49 +125,48 @@ export function mount(el, { db, fs, player }) {
     const btn = root.querySelector("#spBtn"); btn.disabled = true;
     try {
       const gid = `${room.round}_${player.id}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
-      pending.push(w); lastWord = w; input.value = ""; say(""); renderList();
+      pending.push(w); lastWord = w; input.value = ""; say(w !== typed && !hit.parts ? `"${typed}" → "${w}"(으)로 넣었어요` : ""); renderList();
       await fs.setDoc(fs.doc(db, ...ROOM, "guesses", gid), { pid: player.id, nick: player.nick, round: room.round, word: w, at: fs.serverTimestamp() });
     } catch (err) {
       console.error(err);
       pending = pending.filter(x => x !== w);
-      input.value = w; say("보내지 못했어요. 다시 눌러 주세요."); renderList();
+      input.value = typed; say("보내지 못했어요. 다시 눌러 주세요."); renderList();
     } finally { btn.disabled = timeUp() || solved(); input.focus(); }
   }
 
+  const nk = x => (x.nick ? `<small class="nk">${esc(x.nick)}</small>` : "");
   function rowHtml(x, i, cls = "") {
     if (x.pending) return `<div class="sp-row pending ${cls}"><span class="i mono">${i}</span><span class="w">${esc(x.w)}</span><span class="s muted">채점 중…</span><span class="r"></span></div>`;
     if (x.u) return `<div class="sp-row ${cls}"><span class="i mono">${i}</span><span class="w">${esc(x.w)}</span><span class="s muted">모르는 단어</span><span class="r"></span></div>`;
-    return `<div class="sp-row ${x.r === 0 ? "hit" : ""} ${cls}"><span class="i mono">${i}</span><span class="w">${esc(x.w)}</span><span class="s mono">${fmtSim(x.s)}</span>
+    if (x.hit) return `<div class="sp-row hit ${cls}"><span class="i"></span><span class="w">🎉 정답!${nk(x)}</span><span class="s"></span><span class="r"></span></div>`;
+    return `<div class="sp-row ${x.r === 0 ? "hit" : ""} ${x.mine ? "mine" : ""} ${cls}"><span class="i mono">${i ?? ""}</span><span class="w">${esc(x.w)}${nk(x)}</span><span class="s mono">${fmtSim(x.s)}</span>
       <span class="r"><span class="bar"><i style="width:${heat(x.r) * 100}%"></i></span><small class="mono">${fmtRank(x.r)}</small></span></div>`;
   }
 
   function renderList() {
     const box = root.querySelector("#spList"); if (!box || room?.phase !== "round") return;
-    const list = (fb?.list || []).map((x, i) => ({ ...x, i: i + 1 }));
-    const all = [...list, ...pending.map((w, k) => ({ w, pending: true, i: list.length + k + 1 }))];
+    const list = (fb?.list || []).map((x, i) => ({ ...x, i: i + 1, mine: true }));
+    const all = [...list, ...pending.map((w, k) => ({ w, pending: true, mine: true, i: list.length + k + 1 }))];
     const last = all.find(x => x.w === lastWord);
-    root.querySelector("#spLast").innerHTML = last ? `<div class="muted" style="font-size:.85rem">방금 넣은 단어</div>${rowHtml(last, last.i, "latest")}` : "";
-    root.querySelectorAll("[data-tab]").forEach(b => { b.classList.toggle("on", b.dataset.tab === tab); b.setAttribute("aria-selected", b.dataset.tab === tab); });
-    const sorted = [...list].sort((a, b) => (b.s ?? -1) - (a.s ?? -1));
-    if (tab === "all") box.innerHTML = allHtml();
-    else box.innerHTML = sorted.length ? sorted.map(x => rowHtml(x, x.i)).join("") : `<p class="muted" style="text-align:center">아직 넣은 단어가 없어요. 아무 단어나 시작해 보세요!</p>`;
+    root.querySelector("#spLast").innerHTML = last ? `<div class="muted" style="font-size:.85rem">내가 방금 넣은 단어</div>${rowHtml(last, last.i, "latest")}` : "";
+
+    // 모두의 추측 + 내 추측을 한 목록으로 (내 단어는 바로 보이고, 다른 사람 단어는 2초마다 갱신)
+    const f = feed && feed.round === room.round ? feed : null;
+    const merged = new Map();
+    for (const x of f?.top || []) merged.set(x.w, { ...x });
+    for (const x of list) if (!x.u) merged.set(x.w, { ...merged.get(x.w), ...x, nick: "나", mine: true });
+    const rows = [...merged.values()].filter(x => x.r !== 0).sort((a, b) => (b.s ?? -99) - (a.s ?? -99));
+    const solvedLine = f?.solved?.length ? `<div class="sp-sub">맞힌 사람: ${f.solved.map(esc).join(", ")}</div>` : "";
+    box.innerHTML = solvedLine + (rows.length ? rows.map((x, i) => rowHtml(x, i + 1)).join("")
+      : `<p class="muted" style="text-align:center">아직 추측이 없어요. 아무 단어나 시작해 보세요!</p>`);
+
+    // 지금 가장 가까운 단어 1·2등: 입력창 바로 위에 고정 (키보드가 올라와도 보이게)
+    const t2 = root.querySelector("#spTop2");
+    if (t2) t2.innerHTML = rows.length ? rows.slice(0, 2).map((x, i) => `<div class="sp-top2-i ${x.mine ? "mine" : ""}"><small>${i + 1}등</small><b>${esc(x.w)}</b><span class="mono">${fmtSim(x.s)}</span><small class="mono">${fmtRank(x.r)}</small></div>`).join("") : "";
+
     const sv = root.querySelector("#spSolved");
     if (sv) sv.innerHTML = solved() ? `<div class="sp-solved"><span class="emoji" aria-hidden="true">🎉</span> 정답! ${fmtTime(fb.solvedMs)} 만에 ${fb.n}번째 추측으로 맞혔어요</div>` : "";
     if (solved()) { const b = root.querySelector("#spBtn"), i = root.querySelector("#spText"); if (b) b.disabled = true; if (i) i.disabled = true; }
-  }
-
-  // 모두의 추측: 다른 사람이 넣은 단어와 순위 (정답 단어는 운영자 화면이 빼고 보냄)
-  function allHtml() {
-    const f = feed && feed.round === room.round ? feed : null;
-    if (!f || !f.total) return `<p class="muted" style="text-align:center">아직 아무도 추측하지 않았어요</p>`;
-    const nk = x => `<small class="nk">${esc(x.nick)}</small>`;
-    const row = (x, i) => x.hit
-      ? `<div class="sp-row hit"><span class="i"></span><span class="w">🎉 정답!${nk(x)}</span><span class="s"></span><span class="r"></span></div>`
-      : `<div class="sp-row"><span class="i mono">${i ?? ""}</span><span class="w">${esc(x.w)}${nk(x)}</span><span class="s mono">${fmtSim(x.s)}</span>
-        <span class="r"><span class="bar"><i style="width:${heat(x.r) * 100}%"></i></span><small class="mono">${fmtRank(x.r)}</small></span></div>`;
-    return `${f.solved?.length ? `<div class="sp-sub">맞힌 사람: ${f.solved.map(esc).join(", ")}</div>` : ""}
-      <div class="sp-sub">방금 들어온 추측</div>${f.recent.slice(0, 5).map(x => row(x)).join("")}
-      <div class="sp-sub">가장 가까운 단어 (모두)</div>${f.top.map((x, i) => row(x, i + 1)).join("")}`;
   }
 
   function renderTimer() {

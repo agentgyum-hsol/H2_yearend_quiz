@@ -25,8 +25,9 @@ export const RANK_CUTOFF = 1000;         // 이 순위 밖은 "1000위 밖"
 export const MIN_GAP_MS = 1500;          // 한 사람의 추측 간격 (Firestore 쓰기 한도 보호)
 export const HINT_RANKS = [100, 30, 10]; // 운영자가 차례로 공개할 수 있는 힌트 순위
 export const FEED_TOP = 30;              // 모두의 추측: 가까운 단어 몇 개까지 공개
-export const FEED_RECENT = 20;           // 모두의 추측: 최근 추측 몇 개까지 공개
+export const FEED_RECENT = 1;            // 방금 들어온 추측: 운영자 큰 화면에만 1개
 export const FEED_EVERY_MS = 2000;       // 모두의 추측 갱신 간격 (Firestore 읽기 한도 보호)
+export const TOP_SIM_MIN = 0.80;         // 가장 가까운 단어(1위)의 유사도가 이보다 낮으면 전체를 같은 비율로 올림 (순위는 그대로)
 
 // [가정] 점수: 맞힌 순서대로 100, 98, 96 … 최소 50. 못 맞히면 가장 가까이 간 순위로 부분 점수.
 export function solvePoints(order) { return Math.max(50, 100 - 2 * order); }
@@ -69,12 +70,51 @@ export function ranked(rows) {
   return out;
 }
 
-// 단어 목록 (참가자 화면은 모르는 단어를 보내지 않으려고 이것만 받음, 약 200KB)
+// 단어 목록 (참가자 화면은 모르는 단어를 보내지 않으려고 이것만 받음, 약 650KB)
+// data/words.json = {core, words}: 앞쪽 core개는 순위·힌트에 쓰는 기본 명사, 뒤쪽은 받아만 주는 단어(명사·동사·형용사·합성어)
 let wordsP = null;
 export function loadWords() {
   if (!wordsP) wordsP = fetch(new URL("./data/words.json", import.meta.url)).then(r => {
     if (!r.ok) throw new Error("단어 목록을 받지 못했어요");
     return r.json();
-  });
+  }).then(d => (Array.isArray(d) ? { core: d.length, words: d } : d));
+  wordsP.catch(() => { wordsP = null; });
   return wordsP;
+}
+
+// 목록에 없는 입력을 목록 단어로 바꿔 보기. 참가자 화면과 운영자 화면이 같은 규칙을 씀.
+//   1) 그대로   2) 조사·복수 떼기 (고양이가 → 고양이, 친구들이랑 → 친구)
+//   3) 동사·형용사 활용 → 기본형 (먹었어 → 먹다, 행복해요 → 행복하다)
+//   4) 두 단어 합성어 (인공지능 → 인공+지능): 운영자 화면이 두 단어 벡터의 합으로 채점
+// 돌려주는 값: {w, parts?} 또는 null
+const JOSA = ["에서부터", "으로부터", "에게서", "한테서", "으로서", "으로써", "이라고", "이라는", "에서는", "에서도", "에게는", "까지", "부터", "처럼", "보다", "마다", "조차", "에서", "에게", "한테", "께서",
+  "으로", "이랑", "이나", "이든", "이며", "하고", "라고", "라는", "은", "는", "이", "가", "을", "를", "에", "의", "도", "로", "와", "과", "만", "랑", "나", "요", "들", "님"];
+const ENDINGS = [["했습니다", "하다"], ["합니다", "하다"], ["했어요", "하다"], ["해요", "하다"], ["했다", "하다"], ["했어", "하다"], ["하는", "하다"], ["하게", "하다"], ["하고", "하다"], ["하기", "하다"], ["해서", "하다"], ["해", "하다"], ["한", "하다"], ["함", "하다"],
+  ["습니다", "다"], ["었어요", "다"], ["았어요", "다"], ["었다", "다"], ["았다", "다"], ["었어", "다"], ["았어", "다"], ["어요", "다"], ["아요", "다"], ["는", "다"], ["고", "다"], ["기", "다"], ["게", "다"], ["지", "다"], ["네", "다"], ["음", "다"], ["어", "다"], ["아", "다"]];
+export function resolve(raw, has) {
+  const w = norm(raw);
+  if (!w) return null;
+  if (has(w)) return { w };
+  const strip = s => { for (const j of JOSA) if (s.length > j.length && s.endsWith(j)) { const b = s.slice(0, -j.length); if (has(b)) return b; } return null; };
+  let b = strip(w);
+  if (b) return { w: b };
+  for (const j of JOSA) if (w.length > j.length && w.endsWith(j)) { b = strip(w.slice(0, -j.length)); if (b) return { w: b }; } // 친구들이랑
+  for (const [e, to] of ENDINGS) if (w.length > e.length && w.endsWith(e)) { b = w.slice(0, -e.length) + to; if (has(b)) return { w: b }; }
+  // 합성어: 앞뒤 모두 목록에 있는 가장 고른 나누기. 한쪽은 두 글자 이상, 앞쪽은 동사·형용사가 아님
+  const split = s => {
+    let best = null;
+    for (let i = 1; i < s.length; i++) {
+      const a = s.slice(0, i), c = s.slice(i);
+      if (Math.max(a.length, c.length) < 2 || a.endsWith("다") || !has(a) || !has(c)) continue;
+      const sc = Math.min(a.length, c.length);
+      if (!best || sc > best.sc) best = { sc, parts: [a, c] };
+    }
+    return best;
+  };
+  if (w.length >= 3 && w.length <= 8) {
+    let sp = split(w);
+    if (sp) return { w, parts: sp.parts };
+    for (const j of JOSA) if (w.length - j.length >= 3 && w.endsWith(j)) { const s = w.slice(0, -j.length); sp = split(s); if (sp) return { w: s, parts: sp.parts }; }
+  }
+  return null;
 }
