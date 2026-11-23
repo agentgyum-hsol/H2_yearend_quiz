@@ -74,3 +74,31 @@
 .ep-stat div { background: var(--night-2); border-radius: 14px; padding: 12px; }
 .ep-stat b { display: block; font-family: var(--mono); font-size: 1.6rem; font-variant-numeric: tabular-nums; }
 .ep-stat small { color: var(--muted); }
+
+/* 최종 1위 발표 */
+.eh-champ { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px 40px; border-radius: 20px; border: 2px dashed var(--line); min-width: min(520px, 100%); }
+.eh-champ .nm { font-family: var(--display); font-size: clamp(2.6rem, 8vw, 6rem); line-height: 1.05; overflow-wrap: anywhere; }
+.eh-champ .sc { font-family: var(--mono); color: var(--muted); }
+.eh-champ .emoji { font-size: 3rem; }
+.eh-champ.on { border: 2px solid var(--gold); background: color-mix(in srgb, var(--gold) 12%, transparent); animation: eh-pop .6s cubic-bezier(.2,1.4,.4,1); }
+.eh-champ.on .nm { color: var(--gold); }
+.eh-secret { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: 100%; min-height: 120px; }
+.eh-secret .emoji { font-size: 2.6rem; }
+.eh-secret b { font-size: 1.8rem; font-weight: 400; }
+
+/* 최종 발표 1~5위 */
+.eh-final { display: flex; flex-direction: column-reverse; gap: 8px; width: min(640px, 100%); }
+.eh-final-row { display: grid; grid-template-columns: 4em minmax(0, 1fr) auto; gap: 12px; align-items: baseline; padding: 6px 16px; border-radius: 14px; border: 1px dashed var(--line); color: var(--muted); }
+.eh-final-row .r { font-family: var(--mono); }
+.eh-final-row .n { font-family: var(--display); font-size: 1.6rem; text-align: left; overflow-wrap: anywhere; }
+.eh-final-row .n small { font-family: var(--body); font-size: .85rem; color: var(--dancheong); }
+.eh-final-row .s { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.eh-final-row.on { border-style: solid; color: var(--paper); animation: eh-pop .45s cubic-bezier(.2,1.4,.4,1); }
+.eh-final-row.first { border-color: var(--gold); background: color-mix(in srgb, var(--gold) 12%, transparent); }
+.eh-final-row.first .n { color: var(--gold); font-size: 2.2rem; }
+.eh-final-row.skip .nn { text-decoration: line-through; text-decoration-color: var(--dancheong); }
+.eh-champ.on { padding: 10px 32px; }
+.eh-champ.on .nm { font-size: clamp(2.2rem, 6vw, 4.2rem); }
+.eh-champ.on { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 6px 18px; }
+.eh-final-row .n { font-size: 1.3rem; }
+.eh-final-row.first .n { font-size: 1.7rem; }

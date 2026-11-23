@@ -113,7 +113,7 @@ $("resetPlayers").onclick = async () => {
   if (!armed) { armed = true; $("resetNote").textContent = "한 번 더 누르면 모든 참가자가 닉네임을 다시 정해야 합니다."; setTimeout(() => { armed = false; $("resetNote").textContent = ""; }, 5000); return; }
   armed = false;
   const b = fs.writeBatch(db);
-  players.forEach(p => b.delete(fs.doc(db, "players", p.id)));
+  players.forEach(p => { b.delete(fs.doc(db, "players", p.id)); b.delete(fs.doc(db, "pins", p.id)); });
   await b.commit();
   $("resetNote").textContent = "비웠습니다.";
 };

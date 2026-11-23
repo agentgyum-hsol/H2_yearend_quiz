@@ -26,10 +26,13 @@
 <section class="center" id="loading"><p class="muted">연결하는 중…</p></section>
 
 <section class="center" id="join" hidden>
-  <h1>닉네임을 정해 주세요</h1>
-  <p class="muted" style="margin:0">순위표에 이 이름이 나옵니다. 이름이나 별명을 쓰면 찾기 쉬워요.</p>
+  <h1>실명으로 입장해 주세요</h1>
+  <p class="muted" style="margin:0">순위표와 시상에 이 이름이 쓰여요. 숫자 4자리는 휴대폰이 바뀌거나 창을 닫았을 때 점수를 이어받는 데 씁니다. 꼭 기억해 두세요.</p>
   <form id="joinForm" autocomplete="off">
-    <input class="field" id="nick" maxlength="10" placeholder="예: 김대리" required>
+    <label class="muted" for="nick" style="text-align:left">이름</label>
+    <input class="field" id="nick" maxlength="10" placeholder="예: 김민지" required>
+    <label class="muted" for="pin" style="text-align:left">숫자 4자리</label>
+    <input class="field mono" id="pin" maxlength="4" inputmode="numeric" pattern="[0-9]{4}" placeholder="예: 1225" required>
     <button class="btn primary" type="submit">입장하기</button>
     <div class="err" id="joinErr" role="alert"></div>
   </form>
@@ -57,14 +60,15 @@ const { db, fs, uid, mock } = await connect();
 $("mockBanner").hidden = !mock;
 const show = id => ["loading", "join", "wait", "game"].forEach(s => $(s).hidden = s !== id);
 
-let player = null;           // {id, nick}
+let player = null;           // {id: 참가자 id, nick}. 참가자 id 는 기기와 상관없이 고정, uid 는 지금 이 브라우저의 로그인
 let currentGame = undefined; // rooms/current.gameId
-let unmount = null, mountedId = null;
+let unmount = null, mountedId = null, tries = 0;
 
-// 내 참가자 문서. 운영자가 명단을 비우면 다시 닉네임 화면으로.
-fs.onSnapshot(fs.doc(db, "players", uid), snap => {
-  if (snap.exists()) {
-    player = { id: uid, nick: snap.data().nick };
+// 내 참가자 문서: uid 가 지금 내 로그인인 문서. 다른 기기에서 이어받으면 여기서 빠져 닉네임 화면으로.
+fs.onSnapshot(fs.query(fs.collection(db, "players"), fs.where("uid", "==", uid)), snap => {
+  const d = snap.docs[0];
+  if (d) {
+    player = { id: d.id, nick: d.data().nick };
     $("me").textContent = player.nick; $("me").hidden = false;
     $("waitTitle").textContent = `${player.nick}님, 입장 완료!`;
   } else {
@@ -81,11 +85,35 @@ fs.onSnapshot(fs.doc(db, "rooms", "current"), snap => {
 $("joinForm").onsubmit = async e => {
   e.preventDefault();
   const nick = $("nick").value.trim().replace(/\s+/g, " ");
-  if (nick.length < 1) { $("joinErr").textContent = "닉네임을 한 글자 이상 써 주세요."; return; }
+  const pin = $("pin").value.trim();
+  const err = t => { $("joinErr").textContent = t; };
+  if (nick.length < 1) return err("이름을 한 글자 이상 써 주세요.");
+  if (!/^\d{4}$/.test(pin)) return err("숫자 4자리를 넣어 주세요.");
+  if (tries >= 5) return err("여러 번 틀렸어요. 진행자에게 말해 주세요.");
+  err("");
   const same = await fs.getDocs(fs.query(fs.collection(db, "players"), fs.where("nick", "==", nick)));
-  if (same.docs.some(d => d.id !== uid)) { $("joinErr").textContent = "이미 누가 쓰고 있는 닉네임이에요. 다른 이름으로 해 주세요."; return; }
-  $("joinErr").textContent = "";
-  await fs.setDoc(fs.doc(db, "players", uid), { nick, joinedAt: fs.serverTimestamp() });
+  try {
+    if (same.empty) {
+      // 처음 입장
+      const pid = "p" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+      await fs.setDoc(fs.doc(db, "players", pid), { nick, uid, joinedAt: fs.serverTimestamp() });
+      await fs.setDoc(fs.doc(db, "pins", pid), { pin });
+    } else {
+      // 이어받기: 같은 이름 + 같은 숫자면 그 참가자로 계속. 숫자 확인은 Firestore 규칙이 함.
+      const pid = same.docs[0].id;
+      if (mock) {
+        const p = await fs.getDoc(fs.doc(db, "pins", pid));
+        if (!p.exists() || p.data().pin !== pin) throw new Error("permission-denied");
+      }
+      await fs.setDoc(fs.doc(db, "claims", uid), { pid, pin });
+      await fs.updateDoc(fs.doc(db, "players", pid), { uid });
+    }
+  } catch (ex) {
+    console.error(ex);
+    tries++;
+    err(same.empty ? "입장하지 못했어요. 다시 눌러 주세요."
+      : "이미 있는 이름이에요. 본인이라면 처음에 정한 숫자 4자리를 넣어 주세요. 처음 들어왔다면 이름 뒤에 글자를 붙여 주세요 (예: 김민지B).");
+  }
 };
 
 async function route() {
