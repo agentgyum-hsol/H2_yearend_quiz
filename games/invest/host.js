@@ -6,7 +6,7 @@ import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, TOP_N, moveO
 import { watchWinners, pickWinner, otherGameTitle, confirmWinner, clearWinner } from '../../shared/winners.js';
 
 const GAME = 'invest';
-const TITLES = { emoji: '이게 내 이모지야', invest: '반도체왕 임삼성', similar: '단어 온도계' };
+const TITLES = { emoji: '이게 내 이모지야', invest: '반도체왕 임삼성', similar: 'H2맨틀' };
 const PHASE_LABEL = { news: '뉴스·시초 주문', market: '실시간 장', reveal: '결과' };
 const newRun = () => Date.now().toString(36);
 const T = MARKET_SECONDS;

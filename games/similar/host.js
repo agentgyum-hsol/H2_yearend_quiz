@@ -1,5 +1,5 @@
-// 단어 온도계 운영자 화면 (프로젝터용). 비밀 단어를 갖고 있고, 참가자 추측을 채점합니다.
-import { ROOM, GAME_ID, TITLE, ROUNDS, DURATION_MS, EXTEND_MS, GRACE_MS, HINT_RANKS,
+// H2맨틀 운영자 화면 (프로젝터용). 비밀 단어를 갖고 있고, 참가자 추측을 채점합니다.
+import { ROOM, GAME_ID, TITLE, ROUNDS, FEED_TOP, FEED_RECENT, FEED_EVERY_MS, DURATION_MS, EXTEND_MS, GRACE_MS, HINT_RANKS,
   solvePoints, nearPoints, loadStyle, esc, norm, fmtSim, fmtRank, heat, ranked } from "./common.js";
 import { loadEngine, SUGGEST } from "./engine.js";
 import { ms } from "../../shared/db.js";
@@ -32,7 +32,7 @@ export function mount(el, { db, fs }) {
   const unsubs = [];
 
   el.innerHTML = `<div class="sh">
-    <div class="sh-top"><div class="display" style="font-size:1.5rem">단어 <span style="color:var(--dancheong)">온도계</span> 🌡️</div><div class="meta" id="shMeta"></div></div>
+    <div class="sh-top"><div class="display" style="font-size:1.5rem">H2<span style="color:var(--dancheong)">맨틀</span> 🌡️</div><div class="meta" id="shMeta"></div></div>
     <div class="sh-progress"><i id="shBar" style="width:0%"></i></div>
     <div class="sh-stage" id="shStage" aria-live="polite"></div>
     <div class="sh-controls" id="shCtl"></div>
@@ -78,7 +78,7 @@ export function mount(el, { db, fs }) {
       if (!by.has(g.pid)) by.set(g.pid, []);
       by.get(g.pid).push({ ...g, at });
     }
-    const next = new Map();
+    const next = new Map(), events = [];
     for (const [pid, gs] of by) {
       gs.sort((a, b) => a.at - b.at);
       const seen = new Set(), list = [];
@@ -90,13 +90,16 @@ export function mount(el, { db, fs }) {
         seen.add(w);
         const hit = t.lookup(w) || { w, s: null, r: null, u: 1 };
         list.push(hit);
+        if (!hit.u) events.push({ pid, nick: g.nick, w: hit.w, s: hit.s, r: hit.r, at: g.at });
         if (hit.r === 0) solvedMs = Math.max(0, g.at - (st ?? g.at));
         if (!hit.u && (best == null || hit.s > best.s)) best = hit;
       }
       next.set(pid, { pid, nick: gs[gs.length - 1].nick, list, best, solvedMs, n: list.length });
     }
     live = next;
+    feed = buildFeed(events);
     renderLive();
+    scheduleFeed();
 
     if (writing) { again = true; return; }
     writing = true;
@@ -117,6 +120,31 @@ export function mount(el, { db, fs }) {
       } while (again);
     } catch (e) { console.error(e); written.clear(); }
     finally { writing = false; }
+  }
+
+  // ── 모두의 추측: 다른 사람의 단어와 순위를 공개해 함께 추리. 비밀 단어(정답)만 가림 ──
+  // rooms/similar/feed/current 문서 하나에 모아 2초에 한 번까지만 씀 (참가자 50명이 이 문서 하나만 구독)
+  let feed = null, feedSig = null, feedTimer = null, feedAt = 0;
+  function buildFeed(events) {
+    const first = new Map();
+    for (const e of [...events].sort((a, b) => a.at - b.at)) if (e.r !== 0 && !first.has(e.w)) first.set(e.w, e);
+    const top = [...first.values()].sort((a, b) => b.s - a.s).slice(0, FEED_TOP).map(({ w, s, r, nick }) => ({ w, s, r, nick }));
+    const recent = [...events].sort((a, b) => b.at - a.at).slice(0, FEED_RECENT)
+      .map(e => (e.r === 0 ? { nick: e.nick, hit: 1 } : { w: e.w, s: e.s, r: e.r, nick: e.nick }));
+    const solved = [...live.values()].filter(p => p.solvedMs != null).sort((a, b) => a.solvedMs - b.solvedMs).map(p => p.nick);
+    return { round: room.round, top, recent, solved, total: events.length };
+  }
+  function scheduleFeed() {
+    if (!feed || feedTimer) return;
+    const wait = Math.max(0, feedAt + FEED_EVERY_MS - Date.now());
+    feedTimer = setTimeout(async () => {
+      feedTimer = null;
+      const sig = JSON.stringify(feed);
+      if (sig === feedSig || room?.phase !== "round") return;
+      feedSig = sig; feedAt = Date.now();
+      try { await fs.setDoc(fs.doc(db, ...ROOM, "feed", "current"), feed); }
+      catch (e) { console.error(e); feedSig = null; }
+    }, wait);
   }
 
   // ── 진행 동작 ──
@@ -189,7 +217,7 @@ export function mount(el, { db, fs }) {
   async function resetGame() {
     if (!resetArmed) { resetArmed = true; render(); setTimeout(() => { resetArmed = false; render(); }, 5000); return; }
     resetArmed = false;
-    for (const name of ["guesses", "feedback", "rounds", "board"]) {
+    for (const name of ["guesses", "feedback", "feed", "rounds", "board"]) {
       const docs = (await fs.getDocs(col(name))).docs;
       for (let i = 0; i < docs.length; i += 450) {
         const b = fs.writeBatch(db); docs.slice(i, i + 450).forEach(d => b.delete(d.ref)); await b.commit();
@@ -263,9 +291,9 @@ export function mount(el, { db, fs }) {
       $("shMeta").innerHTML = `<span class="pill">${ROUNDS}라운드 · 라운드당 ${DURATION_MS / 60000}분</span><span class="pill">참가 ${players.length}명</span>`;
       $("shStage").innerHTML = `
         <div class="emoji" style="font-size:clamp(2.4rem,7vw,4.5rem)" aria-hidden="true">🌡️🔤🕵️</div>
-        <h1 class="sh-title">단어 <span>온도계</span></h1>
-        <p class="sh-mean">비밀 단어가 하나 있어요. 아무 단어나 휴대폰에 넣으면 비밀 단어와 얼마나 가까운지 <b>온도(유사도)</b>와 <b>순위</b>가 나옵니다.<br>
-        뜨거운 단어를 따라가 비밀 단어를 맞히세요. 추측은 몇 번이든 괜찮아요.<br>
+        <h1 class="sh-title">H2<span>맨틀</span></h1>
+        <p class="sh-mean">비밀 단어가 하나 있어요. 아무 단어나 휴대폰에 넣으면 비밀 단어와 얼마나 가까운지 <b>유사도</b>와 <b>순위</b>가 나옵니다.<br>
+        유사도가 높은 단어를 따라가 비밀 단어를 맞히세요. 추측은 몇 번이든 괜찮아요.<br>
         먼저 맞힐수록 높은 점수 (100점부터), 못 맞혀도 1000위 안에 가까이 가면 부분 점수.</p>
         ${secretPanel()}`;
       $("shCtl").innerHTML = `<button class="btn primary" data-act="start" ${eng && table(0) ? "" : "disabled"}>1라운드 시작 <kbd>Enter</kbd></button>${resetBtn()}`;
@@ -336,11 +364,11 @@ export function mount(el, { db, fs }) {
           <span class="s">${shown ? x.score + "점" : ""}</span></div>`;
       }).join("");
       let winnerHtml = "";
-      if (fin && confirmed) winnerHtml = `<div class="sh-champ"><span class="emoji" aria-hidden="true">👑</span><span class="nm">${esc(confirmed.nick)}</span><span class="sc">오늘의 단어 탐정</span></div>`;
+      if (fin && confirmed) winnerHtml = `<div class="sh-champ"><span class="emoji" aria-hidden="true">👑</span><span class="nm">${esc(confirmed.nick)}</span><span class="sc">H2맨틀 우승자</span></div>`;
       else if (fin && pick.tied.length) winnerHtml = `<p class="sh-note" style="color:var(--gold)">우승 자리에 ${pick.tied.map(x => esc(x.nick)).join(", ")} 님이 동점이에요. 가위바위보나 즉석 추가 라운드로 정해 주세요.</p>`;
       else if (fin && pick.winner) winnerHtml = `<p class="sh-note" style="font-size:1.1rem">${pick.skipped.length ? `${pick.skipped.map(x => esc(x.nick)).join(", ")} 님은 이미 다른 게임에서 우승해서, ` : ""}우승은 <b style="color:var(--gold)">${esc(pick.winner.nick)}</b> 님 (${pick.winner.rank}위)</p>`;
       $("shStage").innerHTML = `
-        <h1 class="sh-title" style="font-size:clamp(2rem,5vw,3.6rem)">오늘의 <span>단어 탐정</span>은?</h1>
+        <h1 class="sh-title" style="font-size:clamp(2rem,5vw,3.6rem)">오늘의 <span>H2맨틀 우승자</span>는?</h1>
         ${winnerHtml}
         <div class="sh-final">${rows}</div>`;
       $("shCtl").innerHTML = !fin
@@ -374,6 +402,7 @@ export function mount(el, { db, fs }) {
   }
 
   // 큰 화면 실시간 현황: 단어는 가리고 닉네임과 가장 가까운 순위만
+  // 큰 화면 실시간 현황: 모두의 추측 단어와 순위 (정답 단어만 가림)
   function renderLive() {
     const box = $("shLive"), c = $("shCount");
     if (!box || room?.phase !== "round") return;
@@ -381,14 +410,23 @@ export function mount(el, { db, fs }) {
     const nSolved = rows.filter(p => p.solvedMs != null).length;
     const total = rows.reduce((a, p) => a + p.n, 0);
     if (c) c.innerHTML = `정답 <b>${nSolved}</b>명 · 참여 <b>${rows.length}</b> / ${players.length} · 추측 <b>${total}</b>개`;
-    box.innerHTML = rows.length ? rows.slice(0, 12).map((p, i) => {
-      const r = p.solvedMs != null ? 0 : p.best?.r ?? null;
-      return `<div class="sh-live-row ${r === 0 ? "solved" : ""}">
-        <span class="i mono">${i + 1}</span><span class="n">${esc(p.nick)}</span>
-        <span class="bar"><i style="width:${heat(r) * 100}%"></i></span>
-        <span class="r mono">${r === 0 ? `🎉 ${fmtTime(p.solvedMs)}` : fmtRank(r)}</span><span class="k mono muted">${p.n}회</span></div>`;
-    }).join("") : `<p class="muted">추측을 기다리는 중… 휴대폰에서 아무 단어나 넣어 보세요.</p>`;
+    if (!feed || !feed.total) { box.innerHTML = `<p class="muted">추측을 기다리는 중… 휴대폰에서 아무 단어나 넣어 보세요.</p>`; return; }
+    const solvedNames = rows.filter(p => p.solvedMs != null).map(p => `<span class="chip ok">🎉 ${esc(p.nick)} <small class="mono">${fmtTime(p.solvedMs)}</small></span>`).join("");
+    box.innerHTML = `
+      ${solvedNames ? `<div class="sh-solved">${solvedNames}</div>` : ""}
+      <div class="sh-feed">
+        <div class="card"><div class="muted sh-feed-h">가장 가까운 단어</div>
+          ${feed.top.slice(0, 15).map((x, i) => feedRow(x, i + 1)).join("")}</div>
+        <div class="card"><div class="muted sh-feed-h">방금 들어온 추측</div>
+          ${feed.recent.slice(0, 15).map(x => feedRow(x)).join("")}</div>
+      </div>`;
   }
+  function feedRow(x, i) {
+    if (x.hit) return `<div class="sh-feed-row hit"><span class="i"></span><span class="w">🎉 정답!</span><span class="n">${esc(x.nick)}</span><span class="s"></span><span class="r"></span></div>`;
+    return `<div class="sh-feed-row"><span class="i mono muted">${i ?? ""}</span><span class="w">${esc(x.w)}</span><span class="n">${esc(x.nick)}</span>
+      <span class="s mono">${fmtSim(x.s)}</span><span class="r"><span class="bar"><i style="width:${heat(x.r) * 100}%"></i></span><small class="mono">${fmtRank(x.r)}</small></span></div>`;
+  }
+
 
   let busy = false;
   async function act(a) {
