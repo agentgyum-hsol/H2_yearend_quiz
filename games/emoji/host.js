@@ -20,7 +20,7 @@ export function mount(el, { db, fs }) {
   const unsubs = [];
 
   el.innerHTML = `<div class="eh">
-    <div class="eh-top"><div class="display" style="font-size:1.5rem">이게 내 <span style="color:var(--dancheong)">이모지</span>야</div><div class="meta" id="ehMeta"></div></div>
+    <div class="eh-top"><div class="display" style="font-size:1.5rem">제 <span style="color:var(--dancheong)">이모지</span>야👽</div><div class="meta" id="ehMeta"></div></div>
     <div class="eh-progress"><i id="ehBar" style="width:0%"></i></div>
     <div class="eh-stage" id="ehStage" aria-live="polite"></div>
     <div class="eh-controls" id="ehCtl"></div>
@@ -173,7 +173,7 @@ export function mount(el, { db, fs }) {
       $("ehMeta").innerHTML = `<span class="pill">${MAIN}문제</span><span class="pill">참가 ${players.length}명</span>`;
       $("ehStage").innerHTML = `
         <div class="emoji" style="font-size:clamp(2.4rem,7vw,4.5rem)" aria-hidden="true">🐋⚔️🐋 🦐💥</div>
-        <h1 class="eh-title">이게 내 <span>이모지</span>야</h1>
+        <h1 class="eh-title">제 <span>이모지</span>야👽</h1>
         <p class="eh-mean">이모지를 보고 어떤 속담인지 휴대폰에 써 주세요. 1인 1폰, 각자 풀기!<br>
         맞히면 100점, 빨리 낼수록 최대 50점 더. 시간 절반이 지나면 초성 힌트가 나오고, 그 뒤에 내면 기본 50점.<br>
         어려움 문제는 점수 2배, 제한 시간 40초. 마지막 ${HIDE_LAST}문제는 순위를 가립니다.</p>`;
