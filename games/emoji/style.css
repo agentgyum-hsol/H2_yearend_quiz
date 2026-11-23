@@ -12,7 +12,7 @@
   display: flex; flex-direction: column; align-items: center; justify-content: safe center; overflow: auto;
   gap: clamp(12px, 2.6vh, 28px); padding: clamp(16px, 3.5vh, 40px) 16px; text-align: center;
 }
-.eh-emoji { font-family: var(--emoji); font-size: clamp(2.6rem, min(10vw, 12vh), 8rem); line-height: 1.15; max-width: 100%; overflow-wrap: anywhere; }
+.eh-emoji { font-family: var(--emoji); font-size: clamp(2.2rem, min(10vw, 9vh), 8rem); line-height: 1.15; max-width: 100%; overflow-wrap: anywhere; }
 .eh-emoji span { display: block; }
 .eh-row { display: flex; gap: 22px; align-items: baseline; justify-content: center; flex-wrap: wrap; }
 .eh-timer { font-family: var(--mono); font-size: clamp(1.4rem, 3.4vw, 2.4rem); font-variant-numeric: tabular-nums; color: var(--muted); }
@@ -104,3 +104,23 @@
 .eh-champ.on { flex-direction: row; flex-wrap: wrap; justify-content: center; gap: 6px 18px; }
 .eh-final-row .n { font-size: 1.3rem; }
 .eh-final-row.first .n { font-size: 1.7rem; }
+
+/* 문제 유형 라벨 */
+.pill.type { color: var(--paper); background: color-mix(in srgb, var(--dancheong) 35%, transparent); border-color: transparent; }
+.eh-type { font-family: var(--display); font-size: clamp(1.2rem, 2.8vw, 2rem); color: var(--gold); letter-spacing: .08em; margin-top: -8px; }
+.ep-type { text-align: center; font-family: var(--display); font-size: 1.4rem; color: var(--gold); margin-bottom: 4px; }
+
+/* 오답 전광판 (운영자 화면) */
+.eh-wrong { display: flex; flex-wrap: wrap; justify-content: center; align-content: flex-start; gap: 8px; max-height: 24vh; overflow: hidden; flex-shrink: 0; }
+.eh-wrong:empty { display: none; }
+.eh-wrong-h { flex-basis: 100%; text-align: center; color: var(--muted); font-size: .95rem; }
+.eh-wbub { display: inline-flex; align-items: baseline; gap: 6px; padding: 6px 12px; border-radius: 999px;
+  background: color-mix(in srgb, var(--paper) 8%, transparent); border: 1px solid var(--line);
+  font-size: clamp(1rem, 1.9vw, 1.4rem); max-width: 100%; }
+.eh-wbub.new { animation: eh-pop .35s cubic-bezier(.2,1.4,.4,1); }
+.eh-wbub b { font-weight: 500; text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--dancheong) 70%, transparent); overflow-wrap: anywhere; }
+.eh-wbub small { color: var(--muted); font-size: .75em; white-space: nowrap; }
+.eh-wbub i { font-style: normal; font-family: var(--mono); color: var(--gold); }
+.eh-wbub.many { border-color: color-mix(in srgb, var(--gold) 50%, transparent); }
+.eh-wbub.close b { text-decoration: none; color: var(--gold); }
+.eh-wbub.more { color: var(--muted); }

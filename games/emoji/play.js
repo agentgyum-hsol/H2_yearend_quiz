@@ -47,7 +47,8 @@ export function mount(el, { db, fs, player }) {
         <div class="emoji" style="font-size:3rem" aria-hidden="true">🐋⚔️🐋 🦐💥</div>
         <p class="ep-big">제 이모지야👽</p>
         <ul class="rules">
-          <li>화면에 나오는 이모지를 보고 속담을 써서 내세요</li>
+          <li>화면에 나오는 이모지를 보고 정답을 써서 내세요</li>
+          <li>속담, 사자성어, 영화·드라마 제목, 직장인 말이 섞여 나와요</li>
           <li>빨리 맞힐수록 점수가 높아요</li>
           <li>어려움 문제는 점수 2배</li>
         </ul>
@@ -57,11 +58,12 @@ export function mount(el, { db, fs, player }) {
     else if (room.phase === "question") {
       const label = isReserve(room.q) ? "동점 결승 문제" : `Q${room.q + 1} / ${MAIN} · ${LVL_NAME[q.lvl]}${multFor(q) > 1 ? " ×2" : ""}`;
       root.innerHTML = `
+        ${q.t ? `<div class="ep-type">${esc(q.t)}</div>` : ""}
         <div class="ep-meta"><span class="pill">${label}</span><span class="ep-timer" id="epTimer"></span></div>
         <div class="ep-emoji" aria-label="이모지 문제">${q.e.map(r => `<span>${r}</span>`).join("")}</div>
         <div class="ep-hint" id="epHint"></div>
         <form id="epForm" autocomplete="off">
-          <input class="field" id="epText" maxlength="40" placeholder="속담을 써 주세요" enterkeyhint="send" aria-describedby="epRule">
+          <input class="field" id="epText" maxlength="40" placeholder="${q.t ? esc(q.t) : "정답"}을(를) 써 주세요" enterkeyhint="send" aria-describedby="epRule">
           <div class="ep-rule" id="epRule">띄어쓰기는 상관없어요</div>
           <button class="btn primary" id="epBtn" type="submit">제출</button>
           <div class="ep-sent" id="epSent" role="status"></div>
@@ -102,7 +104,7 @@ export function mount(el, { db, fs, player }) {
       const win = champ && champ.pid === player.id;
       root.innerHTML = `<div class="ep-result">
         <div class="emoji" style="font-size:3.4rem" aria-hidden="true">${!champ ? "🥁" : win ? "👑" : "🎉"}</div>
-        <p class="ep-big ${win ? "ok" : ""}">${!champ ? "최종 발표 중…" : win ? "오늘의 속담왕!" : me ? `${me.rank}위` : "수고했어요"}</p>
+        <p class="ep-big ${win ? "ok" : ""}">${!champ ? "최종 발표 중…" : win ? "오늘의 이모지왕!" : me ? `${me.rank}위` : "수고했어요"}</p>
         <div class="ep-stat">
           <div><b>${me ? me.score : 0}</b><small>최종 점수</small></div>
           <div><b>${me ? me.correct : 0}<small>/${MAIN}</small></b><small>맞힌 문제</small></div>
