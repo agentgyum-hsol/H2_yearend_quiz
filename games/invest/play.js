@@ -1,7 +1,7 @@
 // 반도체왕 임삼성: 참가자(휴대폰) 화면
 // mount(el, ctx) → unmount 함수. ctx = { db, fs, player: { id, nick } }
 import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, applyRound, cashOf,
-  won, pct, cls, arrow, esc, rankList, loadCss } from './data.js';
+  won, pct, cls, arrow, esc, loadCss } from './data.js';
 
 export function mount(el, ctx) {
   const { db, fs, player } = ctx;
@@ -12,7 +12,7 @@ export function mount(el, ctx) {
   const myRef = fs.doc(portCol, player.id);
   const allocRef = (run, r) => fs.doc(db, 'rooms', 'invest', `allocs_${run}_${r}`, player.id);
 
-  let room = null, ports = {}, mine = null, sent = null, draft = null, key = '', unAlloc = null;
+  let room = null, mine = null, sent = null, draft = null, key = '', unAlloc = null;
   let ui = { busy: false, err: '' };
 
   el.innerHTML = '';
@@ -38,11 +38,8 @@ export function mount(el, ctx) {
     }
     render();
   }, e => { ui.err = '서버 연결이 끊겼어요: ' + (e?.message || e); render(); });
-  const unPorts = fs.onSnapshot(portCol, s => {
-    ports = {}; s.forEach(d => { ports[d.id] = d.data(); });
-    mine = ports[player.id] || null;
-    render();
-  });
+  // 내 문서 하나만 구독 (순위는 운영자가 정산 때 적어 줌) → 50명이어도 읽기가 적음
+  const unPorts = fs.onSnapshot(myRef, s => { mine = s.exists() ? s.data() : null; render(); });
 
   /* ---------- 입력 ---------- */
   const cur = () => draft || sent || mine?.lastAlloc || ZERO;
@@ -72,10 +69,7 @@ export function mount(el, ctx) {
   });
 
   /* ---------- 렌더 ---------- */
-  function myRank() {
-    const list = rankList(ports); const i = list.findIndex(p => p.id === player.id);
-    return { rank: i + 1, total: list.length };
-  }
+  function myRank() { return { rank: mine?.rank || 0, total: mine?.total || 0 }; }
   function header() {
     const { rank, total } = myRank();
     const v = mine?.value ?? START_MONEY;
@@ -129,7 +123,7 @@ export function mount(el, ctx) {
     const r = ROUNDS[room.round], m = r.move;
     const settled = mine?.settledRound === room.round;
     const ret = settled ? mine.roundRet : 0;
-    const { rank } = myRank(); const d = settled && mine.prevRank ? mine.prevRank - rank : 0;
+    const { rank } = myRank(); const d = settled && mine.prevRank && rank ? mine.prevRank - rank : 0;
     return `<div class="stack" style="gap:14px">
       <div class="hero stack" style="gap:6px;padding:16px 8px"><div class="muted">이번 라운드 내 수익률</div><div class="big num ${cls(ret)}" style="color:inherit">${pct(ret)}</div>
         ${d ? `<div class="num ${cls(d)}">순위 ${arrow(d)} ${Math.abs(d)}</div>` : ''}</div>

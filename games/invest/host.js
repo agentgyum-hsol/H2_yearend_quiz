@@ -61,15 +61,17 @@ export function mount(el, ctx) {
     return act(async () => {
       const r = room.round, m = ROUNDS[r].move;
       const before = rankList(ports).map(p => p.id);
-      const b = fs.writeBatch(db);
+      const next = {};
       Object.entries(ports).forEach(([id, p]) => {
         const alloc = allocs[id]?.alloc || p.lastAlloc || ZERO;
         const v = applyRound(p.value, alloc, m);
-        b.set(fs.doc(portCol, id), {
-          value: v, hist: [...(p.hist || [p.value]), v], lastAlloc: alloc,
-          roundRet: (v / p.value - 1) * 100, prevRank: before.indexOf(id) + 1, submitted: !!allocs[id], settledRound: r,
-        }, { merge: true });
+        next[id] = { nick: p.nick, value: v, hist: [...(p.hist || [p.value]), v], lastAlloc: alloc,
+          roundRet: (v / p.value - 1) * 100, prevRank: before.indexOf(id) + 1, submitted: !!allocs[id], settledRound: r };
       });
+      // 순위를 미리 계산해 각자 문서에 적어 둠: 참가자 폰은 자기 문서 하나만 구독하면 됨
+      const order = rankList(next), total = order.length;
+      const b = fs.writeBatch(db);
+      order.forEach((p, k) => { const { id, nick, ...rest } = p; b.set(fs.doc(portCol, id), { ...rest, rank: k + 1, total }, { merge: true }); });
       b.update(roomRef, { phase: 'reveal' });
       await b.commit();
     });
@@ -80,7 +82,7 @@ export function mount(el, ctx) {
       Object.entries(ports).forEach(([id, p]) => {
         if (p.settledRound !== room.round || !p.hist || p.hist.length < 2) return;
         const hist = p.hist.slice(0, -1);
-        b.set(fs.doc(portCol, id), { value: hist[hist.length - 1], hist, settledRound: room.round - 1 }, { merge: true });
+        b.set(fs.doc(portCol, id), { value: hist[hist.length - 1], hist, settledRound: room.round - 1, rank: p.prevRank || null }, { merge: true });
       });
       b.update(roomRef, { phase: 'invest' });
       await b.commit();
@@ -90,7 +92,7 @@ export function mount(el, ctx) {
     return act(async () => {
       const b = fs.writeBatch(db);
       Object.keys(ports).forEach(id => b.set(fs.doc(portCol, id),
-        { value: START_MONEY, hist: [START_MONEY], lastAlloc: ZERO, roundRet: 0, prevRank: null, settledRound: -1 }, { merge: true }));
+        { value: START_MONEY, hist: [START_MONEY], lastAlloc: ZERO, roundRet: 0, prevRank: null, rank: null, total: null, settledRound: -1 }, { merge: true }));
       b.set(roomRef, { phase: 'lobby', round: 0, runId: newRun(), start: START_MONEY });
       await b.commit();
     });
