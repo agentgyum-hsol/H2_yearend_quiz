@@ -177,6 +177,11 @@ export function mount(el, { db, fs }) {
     if (room?.phase !== "round") return;
     const t = table(room.round);
     if (!t) { alertBox("비밀 단어가 없어 채점할 수 없어요. 아래에서 다시 넣어 주세요."); return; }
+    // 마감 직전에 낸 추측이 아직 구독으로 안 들어왔을 수 있어 서버에서 한 번 더 읽고 채점
+    try {
+      const snap = await fs.getDocs(fs.query(col("guesses"), fs.where("round", "==", room.round)));
+      guesses = snap.docs.map(d => d.data());
+    } catch (e) { console.error(e); }
     await process();
     const marks = marksOf();
     const rec = { answer: t.answer, top: t.top(10), marks };
