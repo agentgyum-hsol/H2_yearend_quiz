@@ -264,8 +264,8 @@ export function mount(el, { db, fs }) {
       $("shStage").innerHTML = `
         <div class="emoji" style="font-size:clamp(2.4rem,7vw,4.5rem)" aria-hidden="true">🌡️🔤🕵️</div>
         <h1 class="sh-title">H2<span>맨틀</span></h1>
-        <p class="sh-mean">비밀 단어가 하나 있어요. 아무 단어나 휴대폰에 넣으면 비밀 단어와 얼마나 가까운지 <b>온도(유사도)</b>와 <b>순위</b>가 나옵니다.<br>
-        뜨거운 단어를 따라가 비밀 단어를 맞히세요. 추측은 몇 번이든 괜찮아요.<br>
+        <p class="sh-mean">비밀 단어가 하나 있어요. 아무 단어나 휴대폰에 넣으면 비밀 단어와 얼마나 가까운지 <b>유사도</b>와 <b>순위</b>가 나옵니다.<br>
+        유사도가 높은 단어를 따라가 비밀 단어를 맞히세요. 추측은 몇 번이든 괜찮아요.<br>
         먼저 맞힐수록 높은 점수 (100점부터), 못 맞혀도 1000위 안에 가까이 가면 부분 점수.</p>
         ${secretPanel()}`;
       $("shCtl").innerHTML = `<button class="btn primary" data-act="start" ${eng && table(0) ? "" : "disabled"}>1라운드 시작 <kbd>Enter</kbd></button>${resetBtn()}`;
@@ -336,11 +336,11 @@ export function mount(el, { db, fs }) {
           <span class="s">${shown ? x.score + "점" : ""}</span></div>`;
       }).join("");
       let winnerHtml = "";
-      if (fin && confirmed) winnerHtml = `<div class="sh-champ"><span class="emoji" aria-hidden="true">👑</span><span class="nm">${esc(confirmed.nick)}</span><span class="sc">오늘의 단어 탐정</span></div>`;
+      if (fin && confirmed) winnerHtml = `<div class="sh-champ"><span class="emoji" aria-hidden="true">👑</span><span class="nm">${esc(confirmed.nick)}</span><span class="sc">H2맨틀 우승자</span></div>`;
       else if (fin && pick.tied.length) winnerHtml = `<p class="sh-note" style="color:var(--gold)">우승 자리에 ${pick.tied.map(x => esc(x.nick)).join(", ")} 님이 동점이에요. 가위바위보나 즉석 추가 라운드로 정해 주세요.</p>`;
       else if (fin && pick.winner) winnerHtml = `<p class="sh-note" style="font-size:1.1rem">${pick.skipped.length ? `${pick.skipped.map(x => esc(x.nick)).join(", ")} 님은 이미 다른 게임에서 우승해서, ` : ""}우승은 <b style="color:var(--gold)">${esc(pick.winner.nick)}</b> 님 (${pick.winner.rank}위)</p>`;
       $("shStage").innerHTML = `
-        <h1 class="sh-title" style="font-size:clamp(2rem,5vw,3.6rem)">오늘의 <span>단어 탐정</span>은?</h1>
+        <h1 class="sh-title" style="font-size:clamp(2rem,5vw,3.6rem)">오늘의 <span>H2맨틀 우승자</span>는?</h1>
         ${winnerHtml}
         <div class="sh-final">${rows}</div>`;
       $("shCtl").innerHTML = !fin

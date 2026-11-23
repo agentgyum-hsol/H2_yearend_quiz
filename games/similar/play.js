@@ -50,7 +50,7 @@ export function mount(el, { db, fs, player }) {
       root.innerHTML = `<div class="sp-center">
         <div class="emoji" style="font-size:3rem" aria-hidden="true">🌡️🔤🕵️</div>
         <p class="sp-big">H2맨틀</p>
-        <p class="muted" style="margin:0">비밀 단어를 맞히는 게임이에요. 아무 단어나 넣으면 비밀 단어와 얼마나 가까운지 온도와 순위가 나와요. 뜨거운 단어를 따라가세요. 추측 횟수는 무제한, 먼저 맞힐수록 점수가 높아요.</p>
+        <p class="muted" style="margin:0">비밀 단어를 맞히는 게임이에요. 아무 단어나 넣으면 비밀 단어와 얼마나 가까운지 유사도와 순위가 나와요. 유사도가 높은 단어를 따라가세요. 추측 횟수는 무제한, 먼저 맞힐수록 점수가 높아요.</p>
         <p class="muted">곧 시작합니다</p></div>`;
     }
 
@@ -67,7 +67,7 @@ export function mount(el, { db, fs, player }) {
         <div class="sp-msg" id="spMsg" role="status"></div>
         <div id="spSolved"></div>
         <div class="sp-last" id="spLast"></div>
-        <div class="sp-head"><span>#</span><span>단어</span><span>온도</span><span>순위</span></div>
+        <div class="sp-head"><span>#</span><span>단어</span><span>유사도</span><span>순위</span></div>
         <div class="sp-list" id="spList"></div>`;
       const inp = root.querySelector("#spText"); inp.value = keep;
       root.querySelector("#spForm").onsubmit = submit;
@@ -93,7 +93,7 @@ export function mount(el, { db, fs, player }) {
       const win = champ && champ.pid === player.id;
       root.innerHTML = `<div class="sp-center">
         <div class="emoji" style="font-size:3.4rem" aria-hidden="true">${!champ ? "🥁" : win ? "👑" : "🎉"}</div>
-        <p class="sp-big ${win ? "ok" : ""}">${!champ ? "최종 발표 중…" : win ? "오늘의 단어 탐정!" : me ? `${me.rank}위` : "수고했어요"}</p>
+        <p class="sp-big ${win ? "ok" : ""}">${!champ ? "최종 발표 중…" : win ? "H2맨틀 우승!" : me ? `${me.rank}위` : "수고했어요"}</p>
         <div class="sp-stat">
           <div><b>${me ? me.score : 0}</b><small>최종 점수</small></div>
           <div><b>${me ? me.solves : 0}<small>/${ROUNDS}</small></b><small>맞힌 라운드</small></div>
