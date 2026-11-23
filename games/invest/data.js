@@ -2,7 +2,11 @@
 export const START_MONEY = 100_000_000; // 1억원
 export const MARKET_SECONDS = 30;       // 라운드마다 열리는 실시간 장 길이(초)
 export const PRE_SECONDS = 20;          // 본장 전 프리장(준비·시초 주문) 길이(초)
-export const TRADE_COOLDOWN_MS = 1000;  // 폰에서 주문 사이 최소 간격
+export const TRADE_COOLDOWN_MS = 1000;  // 프리장에서 주문 사이 최소 간격
+export const FLASH_AT = 15;             // 본장 몇 초째에 추가 속보가 뜨는지 (장 시간 기준)
+export const FLASH_SECONDS = 5;         // 속보가 뜨면 장이 멈추고 결정할 수 있는 시간(초)
+export const SLIDER_LOCK_SECONDS = 3;   // 본장에서 주문(비율 변경)하면 슬라이더가 잠기는 시간 = 거래 수수료
+export const MARKET_WALL = MARKET_SECONDS + FLASH_SECONDS; // 본장 실제 길이(초): 장 시간 + 속보 정지 시간
 export const TOP_N = 5;                 // 최종 화면에 공개하는 순위
 
 export const ASSETS = [
@@ -23,24 +27,28 @@ export const ROUNDS = [
     boss: '서버에 들어가는 건 다 오른다! ...아마도?',
     move: { dram: 40, nand: 15, gold: -5, btc: 20, cash: 2 },
     shape: { dram: [0, 12, 4, 26, 40], btc: [0, -8, 6, 20] },
+    flash: { title: '빅테크 1곳, 메모리 3년 장기공급 계약 전격 체결', bullets: ['계약 규모 사상 최대, 대부분 서버용 DRAM', '비트코인 채굴업체들도 AI 데이터센터로 업종 변경 바람'] },
     twist: '예상대로 DRAM 독주. 초반 조정에 겁먹고 판 사람은 땅을 쳤다!' },
   { when: '2026년 2분기', title: '스마트폰 판매 3분기 연속 감소… 창고에 재고 산더미',
     bullets: ['신형 스마트폰 판매 부진, 제조사들 부품 주문 축소', '저장장치 재고가 평소의 2배까지 쌓였다는 보도', '금리 인하 기대감은 여전'],
     boss: '폰이 안 팔리면… 폰에 들어가는 게 문제겠지?',
     move: { dram: -25, nand: -35, gold: 10, btc: -10, cash: 2 },
     shape: { dram: [0, 8, -6, -25], nand: [0, -12, -18, -35], gold: [0, 4, 8, 10], btc: [0, 10, -14, -10] },
+    flash: { title: '메모리 업체들 “감산은 없다” 공식 발표', bullets: ['재고가 더 쌓일 거라는 우려 확산', '불안한 투자자들, 안전자산으로 피신 조짐'] },
     twist: 'NAND 직격탄! DRAM은 초반 반짝 반등이 함정이었고, 금이 피난처가 됐다.' },
   { when: '2026년 3분기', title: '비트코인 신규 ETF 승인 임박! 기대감 최고조',
     bullets: ['"승인 확률 90% 이상" 전문가 전망 쏟아져', '커뮤니티는 "이번엔 진짜 달 간다" 열기', '메모리 업황은 바닥 다지기 중'],
     boss: '이건 무조건 비트코인이다! ...근데 언제 팔지?',
     move: { dram: 5, nand: 0, gold: 5, btc: -20, cash: 2 },
     shape: { btc: [0, 14, 24, 8, -20], dram: [0, -4, 3, 5] },
+    flash: { title: 'ETF 최종 승인! …그런데 고래 지갑이 움직인다', bullets: ['대형 보유자 지갑에서 거래소로 비트코인 대량 이동 포착', '“소문에 사서 뉴스에 판다”는 격언 재소환'] },
     twist: '반전! 승인 직전 +24%까지 갔다가 "뉴스에 팔아라"로 폭락. 꼭대기에서 판 사람이 승자!' },
   { when: '2026년 4분기', title: '지정학적 긴장 고조… 글로벌 증시 출렁',
     bullets: ['주요 해협 봉쇄 우려로 원자재 가격 급등', '각국 중앙은행, 금 매입 확대 발표', '공급망 불안에 반도체 장비 수출 일부 지연'],
     boss: '이럴 땐 금 아닙니까, 금!',
     move: { dram: -10, nand: -5, gold: 30, btc: 35, cash: 2 },
     shape: { gold: [0, 10, 18, 30], btc: [0, -16, -10, 12, 35] },
+    flash: { title: '대형 자산운용사 “비트코인은 디지털 금” 대규모 매수', bullets: ['안전자산 수요가 금에 이어 코인으로 번질지 주목', '반도체 장비 수출 지연은 장기화 조짐'] },
     twist: '금은 예상대로 폭등. 비트코인은 초반 급락 뒤 "디지털 금" 바람을 타고 역전!' },
   { when: '2027년 1분기', title: 'HBM 품귀! 메모리 슈퍼사이클 다시 온다',
     bullets: ['차세대 AI 칩 출하 본격화, 고대역폭 메모리 없어서 못 판다', '데이터센터용 대용량 SSD 수요도 급증', '긴장 완화로 안전자산 매도세'],
@@ -48,8 +56,23 @@ export const ROUNDS = [
     move: { dram: 80, nand: 40, gold: -10, btc: -15, cash: 2 },
     shape: { dram: [0, -8, 18, 42, 80], nand: [0, 8, 22, 40], btc: [0, 10, -4, -15] },
     double: true, // 더블 찬스: 투자 종목 흐름과 등락 2배 (현금 이자는 그대로)
+    flash: { title: '임삼성전자, 차세대 HBM 양산 성공! 빅테크 선주문 싹쓸이', bullets: ['DRAM 가격 추가 인상 공식화, SSD 주문도 줄줄이', '위험자산 쏠림에 비트코인은 매물 출회'] },
     twist: '더블 찬스에 메모리 슈퍼사이클! DRAM이 한 라운드에 160% 폭등하며 판을 뒤집었다.' },
 ];
+
+/* ---------- 본장 시계 (속보 정지 포함) ---------- */
+// ms: 본장 시작부터 지난 실제 시간. FLASH_AT 초에 장이 FLASH_SECONDS 초 동안 멈춤(가격 고정, 주문은 그 가격으로 체결).
+export function tickAt(ms) {
+  const s = ms / 1000;
+  if (s < FLASH_AT) return Math.max(0, Math.floor(s));
+  if (s < FLASH_AT + FLASH_SECONDS) return FLASH_AT;
+  return Math.min(MARKET_SECONDS, Math.floor(s - FLASH_SECONDS));
+}
+// 속보 정지 중이면 남은 초(올림), 아니면 0
+export function flashLeft(ms) {
+  const s = ms / 1000;
+  return s >= FLASH_AT && s < FLASH_AT + FLASH_SECONDS ? Math.ceil(FLASH_AT + FLASH_SECONDS - s) : 0;
+}
 
 /* ---------- 가격 흐름 ---------- */
 // 라운드 마감 등락(더블 찬스 반영)

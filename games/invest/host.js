@@ -1,15 +1,16 @@
 // 반도체왕 임삼성: 운영자(프로젝터) 화면
 // mount(el, ctx) → unmount 함수. ctx = { db, fs, gameId, joinUrl? }
-// 진행: 로비 → (라운드마다) 뉴스 → 프리장 20초(시초 주문) → 본장 30초(자동 진행) → 자동 마감·결과 → … → 최종(TOP 5, 우승 확정)
-import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS, TOP_N, moveOf, pricePath, valueAt, indexSeries,
+// 진행: 로비 → (라운드마다) 프리장 20초(뉴스 + 시초 주문, 화면이 뜨자마자 카운트다운) → 본장 30초(15초째 속보로 5초 정지) → 자동 마감·결과 → … → 최종(TOP 5, 우승 확정)
+// 뉴스 단계는 '결과 취소'로 라운드를 되돌렸을 때만 씀(운영자가 프리장을 다시 엶).
+import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS, MARKET_WALL, FLASH_SECONDS, SLIDER_LOCK_SECONDS, TOP_N, tickAt, flashLeft, moveOf, pricePath, valueAt, indexSeries,
   toMs, won, pct, cls, arrow, esc, rankList, lineChart, loadCss } from './data.js';
 import { watchWinners, pickWinner, otherGameTitle, confirmWinner, clearWinner } from '../../shared/winners.js';
 
 const GAME = 'invest';
 const TITLES = { emoji: '이게 내 이모지야', invest: '반도체왕 임삼성', similar: 'H2맨틀' };
-const PHASE_LABEL = { news: '뉴스', market: '프리장 → 본장', reveal: '결과' };
+const PHASE_LABEL = { market: '프리장 → 본장', reveal: '결과' };
 const newRun = () => Date.now().toString(36);
-const T = MARKET_SECONDS, PRE = PRE_SECONDS;
+const T = MARKET_SECONDS, PRE = PRE_SECONDS, W = MARKET_WALL;
 
 export function mount(el, ctx) {
   const { db, fs } = ctx;
@@ -53,7 +54,7 @@ export function mount(el, ctx) {
   // 장 중에는 1초마다 다시 그리고, 시간이 다 되면 자동 정산
   const tickTimer = setInterval(() => {
     if (room?.phase !== 'market') return;
-    if (elapsedMs() >= (T + 2.5) * 1000 && ui.settling !== tradeKey) settle();
+    if (elapsedMs() >= (W + 2.5) * 1000 && ui.settling !== tradeKey) settle();
     render();
   }, 1000);
 
@@ -61,7 +62,8 @@ export function mount(el, ctx) {
   // 본장 시작 기준 경과 시간(운영자 시계). 음수면 프리장
   const elapsedMs = () => (room?.marketStartMs ? Date.now() - (room.marketStartMs + PRE * 1000) : -PRE * 1000);
   const isPre = () => room?.phase === 'market' && elapsedMs() < 0;
-  const curTick = () => Math.max(0, Math.min(T, Math.floor(elapsedMs() / 1000)));
+  const curTick = () => tickAt(Math.max(0, elapsedMs()));
+  const flashNow = () => (room?.phase === 'market' && !isPre() ? flashLeft(elapsedMs()) : 0);
 
   /* ---------- 주문 기록 → 자산 ---------- */
   // 참가자별 주문을 시간순으로 모아 tick 으로 바꿈. 장 시작 전 주문은 0초(시초가)로 체결.
@@ -69,10 +71,10 @@ export function mount(el, ctx) {
     const open = toMs(room.marketStart), start = open == null ? null : open + PRE * 1000; // 서버 시각 기준 본장 시작
     const by = {};
     trades.map(t => ({ ...t, ms: toMs(t.at) ?? t.atMs }))
-      .filter(t => t.ms != null && (!start || t.ms - start <= T * 1000 + 500))
+      .filter(t => t.ms != null && (!start || t.ms - start <= W * 1000 + 500))
       .sort((a, b) => a.ms - b.ms)
       .forEach(t => {
-        const tick = start ? Math.max(0, Math.min(T, Math.floor((t.ms - start) / 1000))) : 0;
+        const tick = start ? tickAt(Math.max(0, t.ms - start)) : 0;
         (by[t.pid] ||= []).push({ tick, alloc: { ...ZERO, ...t.alloc }, ms: t.ms });
       });
     return by;
@@ -109,7 +111,7 @@ export function mount(el, ctx) {
         const v = valueAt(p.value, p.lastAlloc, tr, r, T);
         const last = tr[tr.length - 1];
         // 동점 처리용 결정 시간: 장 시작부터 마지막 주문까지(장 전 주문은 0초). 주문이 없으면 장 전체 시간.
-        const roundTime = last && start ? Math.max(0, Math.min(T * 1000, last.ms - start)) : T * 1000;
+        const roundTime = last && start ? Math.max(0, Math.min(W * 1000, last.ms - start)) : W * 1000;
         next[id] = { nick: p.nick, value: v, hist: [...(p.hist || [p.value]), v], lastAlloc: last ? last.alloc : (p.lastAlloc || ZERO),
           prevAlloc: p.lastAlloc || ZERO, roundRet: (v / p.value - 1) * 100, prevRank: before.indexOf(id) + 1,
           trades: tr.length, settledRound: r, roundTime, totalTime: (p.totalTime || 0) + roundTime };
@@ -180,10 +182,12 @@ export function mount(el, ctx) {
   root.addEventListener('click', e => {
     const t = e.target.closest('[data-a]'); if (!t || t.disabled) return;
     const a = t.dataset.a;
-    if (a === 'start') go({ phase: 'news', round: 0, marketStart: null, marketStartMs: null });
+    // 라운드가 시작되면 바로 프리장 카운트다운 (뉴스는 프리장 화면에 함께 나옴)
+    const openRound = r => go({ phase: 'market', round: r, marketStart: ts(), marketStartMs: Date.now() });
+    if (a === 'start') openRound(0);
     else if (a === 'open') go({ phase: 'market', marketStart: ts(), marketStartMs: Date.now() });
     else if (a === 'settle') settle();
-    else if (a === 'next') room.round >= ROUNDS.length - 1 ? go({ phase: 'final' }) : go({ phase: 'news', round: room.round + 1, marketStart: null, marketStartMs: null });
+    else if (a === 'next') room.round >= ROUNDS.length - 1 ? go({ phase: 'final' }) : openRound(room.round + 1);
     else if (a === 'unsettle') unsettle();
     else if (a === 'back-reveal') go({ phase: 'reveal' });
     else if (a === 'skip') { clearInterval(timer); ui.revealed = 99; render(); }
@@ -239,11 +243,11 @@ export function mount(el, ctx) {
         (winners[GAME] ? `<button class="btn ghost" data-a="unconfirm-win" ${busy}>우승 확정 취소</button>` : '');
     } else {
       steps = `<span class="step">R${room.round + 1}/${ROUNDS.length}</span>` +
-        ['news', 'market', 'reveal'].map(p => `<span class="step ${p === room.phase ? 'on' : ''}">${PHASE_LABEL[p]}</span>`).join('');
-      if (room.phase === 'news') btns = `<button class="btn primary" data-a="open" ${busy}>프리장 열기 (${PRE}초 뒤 본장 자동 시작)</button>`;
+        ['market', 'reveal'].map(p => `<span class="step ${p === room.phase || (p === 'market' && room.phase === 'news') ? 'on' : ''}">${PHASE_LABEL[p]}</span>`).join('');
+      if (room.phase === 'news') btns = `<button class="btn primary" data-a="open" ${busy}>프리장 다시 열기 (${PRE}초 뒤 본장 자동 시작)</button>`;
       if (room.phase === 'market') {
-        const over = elapsedMs() >= T * 1000;
-        btns = `<button class="btn primary" data-a="settle" ${over && !ui.busy ? '' : 'disabled'}>${over ? '마감 · 결과 공개' : isPre() ? '프리장 진행 중…' : '본장 진행 중…'}</button>`;
+        const over = elapsedMs() >= W * 1000;
+        btns = `<button class="btn primary" data-a="settle" ${over && !ui.busy ? '' : 'disabled'}>${over ? '마감 · 결과 공개' : isPre() ? '프리장 진행 중…' : flashNow() ? '속보! 장 일시 정지…' : '본장 진행 중…'}</button>`;
       }
       if (room.phase === 'reveal') {
         const done = ui.revealed > ASSETS.length;
@@ -264,10 +268,11 @@ export function mount(el, ctx) {
         <div class="eyebrow">송년회 투자 배틀 · 개인전</div>
         <h1>반도체왕 <span style="color:var(--accent)">임삼성</span></h1>
         <ul class="rules" style="font-size:1.15rem">
-          <li>모두 <b>${won(START_MONEY)}</b>으로 시작합니다</li>
-          <li>라운드마다 뉴스를 보고, <b>${PRE}초 프리장</b>에서 시초 주문을 넣어요</li>
-          <li><b>${T}초 본장</b>에서는 차트를 보며 언제든 비율을 바꿀 수 있어요</li>
-          <li>${ROUNDS.length}라운드 뒤 자산이 가장 많은 사람이 올해의 반도체왕!</li>
+          <li>모두 <b>${won(START_MONEY)}</b>으로 시작, ${ROUNDS.length}라운드 뒤 자산 1등이 올해의 반도체왕</li>
+          <li>라운드가 열리면 바로 <b>${PRE}초 프리장</b>: 뉴스 보고 시초 주문</li>
+          <li><b>${T}초 본장</b>: 차트를 보며 슬라이더로 비율 변경</li>
+          <li>본장 중간 <b>추가 속보</b>: 장이 ${FLASH_SECONDS}초 멈추고 그 사이 결정</li>
+          <li>거래 수수료: 본장에서 주문하면 슬라이더가 <b>${SLIDER_LOCK_SECONDS}초 잠김</b></li>
           <li>마지막 라운드는 등락 2배 <b>더블 찬스</b></li>
         </ul>
         <div class="card stack" style="gap:10px">
@@ -297,14 +302,14 @@ export function mount(el, ctx) {
     }).join('')}</div>`;
   }
 
-  function vNews() {
+  function vNews() { // 결과 취소 뒤에만 나옴: 운영자가 프리장을 다시 열 때까지 대기
     const r = ROUNDS[room.round];
     return `<div class="stack" style="gap:24px">
-      <div class="eyebrow">라운드 ${room.round + 1} / ${ROUNDS.length} · 속보</div>
+      <div class="eyebrow">라운드 ${room.round + 1} / ${ROUNDS.length} · 라운드 다시 열기 대기</div>
       ${r.double ? doubleBanner() : ''}
       <article class="news"><div class="when">${r.when}</div><h2>${r.title}</h2><ul>${r.bullets.map(b => `<li>${b}</li>`).join('')}</ul></article>
       <div class="boss"><div class="face" aria-hidden="true">임</div><div class="bubble"><b>임삼성 회장</b><br>${r.boss}</div></div>
-      <div class="card row" style="justify-content:space-between"><b>다음: ${PRE}초 프리장 → ${T}초 본장</b><span class="muted">지금은 폰에서 비율을 미리 정해 둘 수 있어요. 주문은 프리장부터 받아요.</span></div>
+      <div class="card row" style="justify-content:space-between"><b>다음: ${PRE}초 프리장 → ${T}초 본장</b><span class="muted">아래 버튼을 누르면 바로 카운트다운이 시작돼요.</span></div>
       ${room.round > 0 ? `<div class="stack" style="gap:10px"><div class="eyebrow">현재 TOP 10</div>${board(rankList(ports), 10, 'total')}</div>` : ''}
     </div>`;
   }
@@ -313,15 +318,19 @@ export function mount(el, ctx) {
     const r = ROUNDS[room.round], left = Math.ceil(-elapsedMs() / 1000);
     const ordered = new Set(trades.map(t => t.pid)).size, n = Object.keys(ports).length, p = n ? Math.round(ordered / n * 100) : 0;
     return `<div class="stack" style="gap:24px">
-      <div class="eyebrow">라운드 ${room.round + 1} · 프리장${r.double ? ' · 더블 찬스 ×2' : ''}</div>
+      <div class="eyebrow">라운드 ${room.round + 1} / ${ROUNDS.length} · 프리장${r.double ? ' · 더블 찬스 ×2' : ''}</div>
+      ${r.double ? doubleBanner() : ''}
       <div class="row" style="gap:24px;align-items:stretch">
         <div class="card stack" style="gap:6px;align-items:center;justify-content:center;min-width:220px">
           <div class="eyebrow" style="color:var(--accent)">본장까지</div>
           <div class="clock num" style="font-size:clamp(4rem,10vw,7rem);color:${left <= 5 ? 'var(--up)' : 'var(--accent)'}">${left}<span>초</span></div>
         </div>
         <div class="card stack" style="gap:14px;flex:1;min-width:260px;justify-content:center">
+          <div class="muted num">${r.when} · 속보</div>
           <h2 style="font-size:clamp(1.4rem,3vw,2.2rem)">${r.title}</h2>
-          <div class="row" style="justify-content:space-between"><b style="font-size:1.3rem">시초 주문 <span class="num" style="color:var(--accent)">${ordered}</span> / ${n}명</b><span class="muted">프리장 주문은 본장 시작 가격으로 체결돼요. 안 내면 지난 라운드 비율 그대로.</span></div>
+          <ul class="news-ul">${r.bullets.map(b => `<li>${b}</li>`).join('')}</ul>
+          <div class="boss"><div class="face" aria-hidden="true">임</div><div class="bubble"><b>임삼성 회장</b><br>${r.boss}</div></div>
+          <div class="row" style="justify-content:space-between"><b style="font-size:1.3rem">시초 주문 <span class="num" style="color:var(--accent)">${ordered}</span> / ${n}명</b><span class="muted">본장 시작 가격으로 체결 · 안 내면 지난 비율 그대로</span></div>
           <div class="meter"><span style="width:${p}%"></span></div>
         </div>
       </div>
@@ -331,7 +340,7 @@ export function mount(el, ctx) {
 
   function vMarket() {
     if (isPre()) return vPre();
-    const r = ROUNDS[room.round], tick = curTick(), left = Math.max(0, T - Math.floor(elapsedMs() / 1000));
+    const r = ROUNDS[room.round], tick = curTick(), left = T - tick, fl = flashNow();
     const series = INVEST.map(a => ({ color: a.color, data: pricePath(room.round, a.id), w: 3.5 }));
     const live = rankList(liveValues(tick));
     return `<div class="stack" style="gap:20px">
@@ -339,6 +348,10 @@ export function mount(el, ctx) {
         <div class="eyebrow">라운드 ${room.round + 1} · 실시간 장${r.double ? ' · 더블 찬스 ×2' : ''}</div>
         <span class="muted">주문 ${trades.length}건</span>
       </div>
+      ${fl ? `<div class="flash" role="alert"><div class="row" style="justify-content:space-between;align-items:center">
+          <span class="flash-tag">추가 속보 · 장 일시 정지</span><span class="clock num">${fl}<span>초</span></span></div>
+        <h2>${r.flash.title}</h2><ul>${r.flash.bullets.map(b => `<li>${b}</li>`).join('')}</ul>
+        <div class="muted">지금 주문하면 멈춘 가격으로 체결돼요. ${fl}초 뒤 장 재개!</div></div>` : ''}
       <div class="market">
         <div class="card stack" style="gap:12px;min-width:0">
           <div class="row" style="justify-content:space-between;align-items:flex-end">
