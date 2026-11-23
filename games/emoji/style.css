@@ -66,6 +66,8 @@
 .ep-hint { font-family: var(--display); font-size: 1.6rem; letter-spacing: .2em; color: var(--gold); }
 .ep form { display: flex; flex-direction: column; gap: 10px; }
 .ep-sent { color: var(--pine); min-height: 1.4em; }
+.ep-rule { color: var(--muted); font-size: .88rem; margin-top: -4px; }
+.eh-rule { color: var(--muted); font-size: clamp(.95rem, 1.6vw, 1.25rem); }
 .ep-big { font-family: var(--display); font-size: 2.2rem; margin: 0; line-height: 1.15; }
 .ep-big.ok { color: var(--pine); }
 .ep-big.no { color: var(--dancheong); }

@@ -15,6 +15,11 @@
   .wait-emoji { font-family: var(--emoji); font-size: 3.5rem; animation: bob 2.4s ease-in-out infinite; }
   @keyframes bob { 50% { transform: translateY(-8px); } }
   #game { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 4px; border: 1px solid var(--line); border-radius: 14px; }
+  .modes button { font: inherit; padding: 10px 6px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; }
+  .modes button[aria-pressed="true"] { background: var(--night-2); color: var(--paper); font-weight: 700; }
+  .conn { position: fixed; left: 50%; top: 10px; transform: translateX(-50%); z-index: 50; padding: 8px 14px; border-radius: 999px;
+    background: var(--dancheong); color: #fff; font-size: .9rem; box-shadow: 0 4px 18px rgba(0,0,0,.35); }
 </style>
 </head>
 <body>
@@ -26,14 +31,18 @@
 <section class="center" id="loading"><p class="muted">연결하는 중…</p></section>
 
 <section class="center" id="join" hidden>
-  <h1>실명으로 입장해 주세요</h1>
-  <p class="muted" style="margin:0">순위표와 시상에 이 이름이 쓰여요. 숫자 4자리는 휴대폰이 바뀌거나 창을 닫았을 때 점수를 이어받는 데 씁니다. 꼭 기억해 두세요.</p>
+  <h1 id="joinTitle">실명으로 입장해 주세요</h1>
+  <div class="modes" role="group" aria-label="입장 방식">
+    <button type="button" id="modeNew" aria-pressed="true">처음 입장</button>
+    <button type="button" id="modeBack" aria-pressed="false">다시 들어오기</button>
+  </div>
+  <p class="muted" id="joinHelp" style="margin:0"></p>
   <form id="joinForm" autocomplete="off">
     <label class="muted" for="nick" style="text-align:left">이름</label>
     <input class="field" id="nick" maxlength="10" placeholder="예: 김민지" required>
     <label class="muted" for="pin" style="text-align:left">숫자 4자리</label>
     <input class="field mono" id="pin" maxlength="4" inputmode="numeric" pattern="[0-9]{4}" placeholder="예: 1225" required>
-    <button class="btn primary" type="submit">입장하기</button>
+    <button class="btn primary" type="submit" id="joinBtn">입장하기</button>
     <div class="err" id="joinErr" role="alert"></div>
   </form>
 </section>
@@ -46,6 +55,7 @@
 
 <section id="game" hidden></section>
 <div class="mock-banner" id="mockBanner" hidden>로컬 모의 DB로 실행 중입니다.</div>
+<div class="conn" id="conn" role="status" hidden>연결이 끊겼어요. 다시 연결하는 중…</div>
 
 <script type="module">
 import { connect } from "../shared/db.js";
@@ -56,8 +66,15 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 $("brand").innerHTML = `${esc(EVENT_NAME)} <span>퀴즈</span>`;
 
-const { db, fs, uid, mock } = await connect();
+const { db, fs, uid, mock, onConn } = await connect();
 $("mockBanner").hidden = !mock;
+// 연결이 2초 넘게 끊겨 있으면 위에 안내 (잠깐 끊겼다 바로 붙는 건 표시하지 않음)
+let connTimer = null;
+onConn(ok => {
+  clearTimeout(connTimer);
+  if (ok) $("conn").hidden = true;
+  else connTimer = setTimeout(() => { $("conn").hidden = false; }, 2000);
+});
 const show = id => ["loading", "join", "wait", "game"].forEach(s => $(s).hidden = s !== id);
 
 let player = null;           // {id: 참가자 id, nick}. 참가자 id 는 기기와 상관없이 고정, uid 는 지금 이 브라우저의 로그인
@@ -72,6 +89,8 @@ fs.onSnapshot(fs.query(fs.collection(db, "players"), fs.where("uid", "==", uid))
     $("me").textContent = player.nick; $("me").hidden = false;
     $("waitTitle").textContent = `${player.nick}님, 입장 완료!`;
   } else {
+    // 다른 휴대폰에서 이어받아 이 화면이 빠진 경우: 다시 들어오기 화면으로
+    if (player) { $("nick").value = player.nick; setMode("back"); }
     player = null; $("me").hidden = true;
   }
   route();
@@ -82,6 +101,37 @@ fs.onSnapshot(fs.doc(db, "rooms", "current"), snap => {
   route();
 });
 
+// 이름 비교용 키: 띄어쓰기와 대소문자를 무시 ("김 민지" = "김민지")
+const nickKey = n => n.replace(/\s+/g, "").toLowerCase();
+let mode = "new";
+function setMode(m) {
+  mode = m;
+  $("modeNew").setAttribute("aria-pressed", m === "new");
+  $("modeBack").setAttribute("aria-pressed", m === "back");
+  $("joinTitle").textContent = m === "new" ? "실명으로 입장해 주세요" : "다시 들어오기";
+  $("joinHelp").textContent = m === "new"
+    ? "순위표와 시상에 이 이름이 쓰여요. 숫자 4자리는 휴대폰이 바뀌거나 창을 닫았을 때 다시 들어오는 데 씁니다. 꼭 기억해 두세요."
+    : "앞서 입장했던 이름과 그때 정한 숫자 4자리를 넣으면 점수가 그대로 이어집니다.";
+  $("joinBtn").textContent = m === "new" ? "입장하기" : "이어서 하기";
+  $("joinErr").textContent = "";
+}
+$("modeNew").onclick = () => setMode("new");
+$("modeBack").onclick = () => setMode("back");
+setMode("new");
+
+// 같은 이름(띄어쓰기·대소문자 무시)의 참가자 목록. 먼저 들어온 순.
+async function findSame(nick) {
+  const col = fs.collection(db, "players");
+  const [a, b] = await Promise.all([
+    fs.getDocs(fs.query(col, fs.where("nickKey", "==", nickKey(nick)))),
+    fs.getDocs(fs.query(col, fs.where("nick", "==", nick))),   // nickKey 가 없던 예전 문서용
+  ]);
+  const map = new Map();
+  [...a.docs, ...b.docs].forEach(d => map.set(d.id, d));
+  const t = d => { const v = d.data().joinedAt; return v?.toMillis ? v.toMillis() : (typeof v === "number" ? v : Infinity); };
+  return [...map.values()].sort((x, y) => t(x) - t(y) || (x.id < y.id ? -1 : 1));
+}
+
 $("joinForm").onsubmit = async e => {
   e.preventDefault();
   const nick = $("nick").value.trim().replace(/\s+/g, " ");
@@ -91,28 +141,45 @@ $("joinForm").onsubmit = async e => {
   if (!/^\d{4}$/.test(pin)) return err("숫자 4자리를 넣어 주세요.");
   if (tries >= 5) return err("여러 번 틀렸어요. 진행자에게 말해 주세요.");
   err("");
-  const same = await fs.getDocs(fs.query(fs.collection(db, "players"), fs.where("nick", "==", nick)));
+  $("joinBtn").disabled = true;
   try {
-    if (same.empty) {
-      // 처음 입장
+    const same = await findSame(nick);
+    if (mode === "new") {
+      // 처음 입장: 같은 이름이 이미 있으면 막음 (이어받기는 "다시 들어오기"에서만)
+      if (same.length) return err("이미 입장한 이름이에요. 동명이인이면 이름 뒤에 구분 글자를 붙여 주세요 (예: 김민지B). 본인이 다시 들어오는 거라면 위의 '다시 들어오기'를 눌러 주세요.");
       const pid = "p" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
-      await fs.setDoc(fs.doc(db, "players", pid), { nick, uid, joinedAt: fs.serverTimestamp() });
+      await fs.setDoc(fs.doc(db, "players", pid), { nick, nickKey: nickKey(nick), uid, joinedAt: fs.serverTimestamp() });
       await fs.setDoc(fs.doc(db, "pins", pid), { pin });
-    } else {
-      // 이어받기: 같은 이름 + 같은 숫자면 그 참가자로 계속. 숫자 확인은 Firestore 규칙이 함.
-      const pid = same.docs[0].id;
-      if (mock) {
-        const p = await fs.getDoc(fs.doc(db, "pins", pid));
-        if (!p.exists() || p.data().pin !== pin) throw new Error("permission-denied");
+      // 거의 동시에 같은 이름으로 두 사람이 들어온 경우: 먼저 들어온 사람만 남기고 나중 사람은 되돌림
+      const after = await findSame(nick);
+      if (after.length > 1 && after[0].id !== pid) {
+        await fs.deleteDoc(fs.doc(db, "pins", pid)).catch(() => {});
+        await fs.deleteDoc(fs.doc(db, "players", pid)).catch(() => {});
+        return err("방금 같은 이름으로 다른 분이 먼저 입장했어요. 이름 뒤에 구분 글자를 붙여 주세요 (예: 김민지B).");
       }
-      await fs.setDoc(fs.doc(db, "claims", uid), { pid, pin });
-      await fs.updateDoc(fs.doc(db, "players", pid), { uid });
+    } else {
+      // 다시 들어오기: 같은 이름 + 같은 숫자면 그 참가자로 계속. 숫자 확인은 Firestore 규칙이 함.
+      if (!same.length) return err("그 이름으로 입장한 사람이 없어요. 처음이라면 '처음 입장'을 눌러 주세요.");
+      const pid = same[0].id;
+      if (same[0].data().uid === uid) return; // 이미 이 휴대폰
+      try {
+        if (mock) {
+          const p = await fs.getDoc(fs.doc(db, "pins", pid));
+          if (!p.exists() || p.data().pin !== pin) throw new Error("permission-denied");
+        }
+        await fs.setDoc(fs.doc(db, "claims", uid), { pid, pin });
+        await fs.updateDoc(fs.doc(db, "players", pid), { uid });
+      } catch (ex) {
+        console.error(ex);
+        tries++;
+        return err("숫자 4자리가 맞지 않아요. 처음에 정한 숫자를 넣어 주세요.");
+      }
     }
   } catch (ex) {
     console.error(ex);
-    tries++;
-    err(same.empty ? "입장하지 못했어요. 다시 눌러 주세요."
-      : "이미 있는 이름이에요. 본인이라면 처음에 정한 숫자 4자리를 넣어 주세요. 처음 들어왔다면 이름 뒤에 글자를 붙여 주세요 (예: 김민지B).");
+    err("입장하지 못했어요. 잠시 뒤 다시 눌러 주세요.");
+  } finally {
+    $("joinBtn").disabled = false;
   }
 };
 

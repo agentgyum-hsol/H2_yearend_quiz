@@ -35,7 +35,7 @@ export function mount(el, { db, fs }) {
     render();
   }));
   unsubs.push(fs.onSnapshot(fs.collection(db, "players"), s => { players = s.docs.map(d => ({ id: d.id, ...d.data() })); render(); }));
-  unsubs.push(fs.onSnapshot(col("results"), s => { results = {}; s.docs.forEach(d => results[d.id] = d.data()); render(); }));
+  unsubs.push(fs.onSnapshot(col("results"), s => { results = {}; s.docs.forEach(d => results[d.id] = d.data()); render(); addLate(); }));
   unsubs.push(fs.onSnapshot(fs.doc(db, ...ROOM, "board", "current"), s => { scores = s.exists() ? s.data().rows || [] : []; render(); }));
 
   unsubs.push(watchWinners(db, fs, w => { winners = w; render(); }));
@@ -45,7 +45,7 @@ export function mount(el, { db, fs }) {
     if (ansUnsub) ansUnsub();
     ansQ = q; answers = [];
     ansUnsub = fs.onSnapshot(fs.query(col("answers"), fs.where("q", "==", q)), s => {
-      answers = s.docs.map(d => d.data()); renderLive();
+      answers = s.docs.map(d => d.data()); renderLive(); addLate();
     });
   }
 
@@ -56,24 +56,49 @@ export function mount(el, { db, fs }) {
   async function hint() {
     if (room?.phase === "question" && !room.hintAt) await fs.updateDoc(roomRef, { hintAt: fs.serverTimestamp() });
   }
-  async function reveal() {
-    if (room?.phase !== "question") return;
+  // 답 하나 채점. 마감 뒤에 낸 답과, 이번 문제 시작 전에 남아 있던 예전 답은 제외(null)
+  function markOf(a) {
     const q = ALL[room.q];
     const startedAt = ms(room.startedAt), hintAt = ms(room.hintAt), duration = room.duration || durationFor(q), mult = multFor(q);
+    const at = ms(a.at);
+    if (at != null && startedAt != null && (at > startedAt + duration + GRACE_MS || at < startedAt - 1000)) return null;
+    const ok = isCorrect(q, a.text);
+    const t = at != null && startedAt != null ? Math.max(0, at - startedAt) : duration;
+    const ifOk = points({ at, startedAt, hintAt, duration, mult });
+    return { ok, auto: ok, t, pts: ok ? ifOk : 0, ifOk };
+  }
+  async function reveal() {
+    if (room?.phase !== "question") return;
     const marks = {};
-    for (const a of answers) {
-      const at = ms(a.at);
-      if (at != null && startedAt != null && at > startedAt + duration + GRACE_MS) continue; // 마감 뒤 제출 제외
-      const ok = isCorrect(q, a.text);
-      const t = at != null && startedAt != null ? Math.max(0, at - startedAt) : duration;
-      const ifOk = points({ at, startedAt, hintAt, duration, mult });
-      marks[a.pid] = { ok, auto: ok, t, pts: ok ? ifOk : 0, ifOk };
-    }
+    // 마감 직전에 낸 답이 아직 구독으로 안 들어왔을 수 있어서, 채점할 때는 서버에서 한 번 더 읽음
+    let list = answers;
+    try { list = (await fs.getDocs(fs.query(col("answers"), fs.where("q", "==", room.q)))).docs.map(d => d.data()); }
+    catch (e) { console.warn("answers fetch", e); }
+    for (const a of list) { const m = markOf(a); if (m) marks[a.pid] = m; }
     const b = fs.writeBatch(db);
     b.set(fs.doc(db, ...ROOM, "results", String(room.q)), { marks });
     if (!isReserve(room.q)) writeTotals(b, { ...results, [room.q]: { marks } }, room.q);
     b.update(roomRef, { phase: "reveal" });
     await b.commit();
+  }
+  // 정답 공개 뒤에 도착한 답(휴대폰 전송이 늦은 경우)도 마감 안에 낸 것이면 채점에 넣음
+  let lateBusy = false;
+  async function addLate() {
+    if (lateBusy || room?.phase !== "reveal" || ansQ !== room.q) return;
+    const key = String(room.q), cur = results[key]?.marks;
+    if (!cur) return;
+    const add = {};
+    for (const a of answers) if (!cur[a.pid]) { const m = markOf(a); if (m) add[a.pid] = m; }
+    if (!Object.keys(add).length) return;
+    lateBusy = true;
+    try {
+      const marks = { ...cur, ...add };
+      results[key] = { marks };
+      const b = fs.writeBatch(db);
+      b.set(fs.doc(db, ...ROOM, "results", key), { marks });
+      if (!isReserve(room.q)) writeTotals(b, { ...results }, room.q);
+      await b.commit();
+    } finally { lateBusy = false; }
   }
   async function toggle(pid) {
     const key = String(room.q);
@@ -161,7 +186,8 @@ export function mount(el, { db, fs }) {
         <div class="qnum mono muted">${isReserve(room.q) ? "동점 결승 문제" : `Q${room.q + 1}`}${multFor(q) > 1 ? " · 점수 2배" : ""}</div>
         ${emojiHtml(q)}
         <div class="eh-row"><div class="eh-timer" id="ehTimer"></div><div class="eh-count" id="ehCount"></div></div>
-        <div class="eh-hint" id="ehHint"></div>`;
+        <div class="eh-hint" id="ehHint"></div>
+        <div class="eh-rule">띄어쓰기·문장부호는 상관없어요. 몇 글자 오타도 정답으로 봐요.</div>`;
       $("ehCtl").innerHTML = `
         <button class="btn" data-act="hint" id="hintBtn">초성 힌트 지금 <kbd>H</kbd></button>
         <button class="btn primary" data-act="reveal">정답 공개 <kbd>Enter</kbd></button>`;
