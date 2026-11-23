@@ -11,7 +11,10 @@ service cloud.firestore {
 
     match /players/{pid} {
       allow read: if signedIn();
-      allow create: if signedIn() && request.resource.data.uid == me()
+      // 직접 입장(uid 가 나), 또는 운영 화면의 '되돌리기': 비우기 전 명단(rooms/playersBackup.ids)에 있던 참가자만 다시 만듦
+      allow create: if signedIn()
+        && (request.resource.data.uid == me()
+            || pid in get(/databases/$(db)/documents/rooms/playersBackup).data.ids)
         && request.resource.data.nick is string && request.resource.data.nick.size() <= 20;
       // 이어받기: 이름은 그대로, uid 만 나로 바꿈. 내가 먼저 써 둔 claims/{내 uid} 의 숫자가 pins/{pid} 와 같아야 함.
       allow update: if signedIn()
