@@ -39,8 +39,9 @@
 .sh-count { font-family: var(--mono); font-size: clamp(1rem, 2vw, 1.4rem); color: var(--muted); }
 .sh-count b { color: var(--paper); font-weight: 600; }
 .sh-hints { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
-.sh-hint { display: inline-flex; flex-direction: column; align-items: center; border: 1px solid var(--gold); color: var(--gold); border-radius: 14px; padding: 6px 18px; font-family: var(--display); font-size: clamp(1.4rem, 3vw, 2.2rem); }
-.sh-hint small { font-family: var(--body); font-size: .8rem; color: var(--muted); }
+/* 힌트: 금색 바탕으로 눈에 띄게 */
+.sh-hint { display: inline-flex; flex-direction: column; align-items: center; background: var(--gold); color: var(--night); border-radius: 14px; padding: 6px 20px; font-family: var(--display); font-size: clamp(1.4rem, 3vw, 2.2rem); box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 35%, transparent); }
+.sh-hint small { font-family: var(--body); font-size: .8rem; color: var(--night); opacity: .75; }
 
 .sh-live { width: min(900px, 100%); display: grid; gap: 6px; }
 .sh-live-row { display: grid; grid-template-columns: 2.2em minmax(6em, 1fr) minmax(0, 2fr) 7em 3.5em; gap: 12px; align-items: center; background: var(--night); border-radius: 10px; padding: 8px 14px; font-size: clamp(1rem, 1.8vw, 1.35rem); text-align: left; }
@@ -90,8 +91,17 @@
 .sp-timer.warn { color: var(--gold); }
 .sp-timer.over { color: var(--dancheong); }
 .sp-hints { display: flex; gap: 6px; flex-wrap: wrap; }
-.sp-hints span { border: 1px solid var(--gold); color: var(--gold); border-radius: 999px; padding: 2px 12px; }
-.sp-hints small { color: var(--muted); }
+.sp-hints span { background: var(--gold); color: var(--night); font-weight: 600; border-radius: 999px; padding: 3px 12px; }
+.sp-hints small { color: var(--night); opacity: .75; font-weight: 400; }
+/* 지금 가장 가까운 단어 1·2등 (입력창 바로 위) */
+.sp-top2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.sp-top2:empty { display: none; }
+.sp-top2-i { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 6px; align-items: baseline; background: var(--night-2); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+.sp-top2-i small:first-child { grid-row: span 2; color: var(--muted); font-size: .75rem; }
+.sp-top2-i b { font-weight: 600; font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-top2-i span { font-size: .9rem; }
+.sp-top2-i small.mono { grid-column: 2 / 4; font-size: .72rem; color: var(--muted); }
+.sp-top2-i.mine { border-color: #5fb3ff; }
 #spForm { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .sp-msg { min-height: 1.3em; font-size: .92rem; color: var(--gold); }
 .sp-solved { background: color-mix(in srgb, var(--pine) 22%, transparent); border: 1px solid var(--pine); border-radius: 12px; padding: 10px 14px; }
@@ -105,6 +115,11 @@
 .sp-row .r small { font-size: .75rem; color: var(--muted); text-align: right; }
 .sp-row.hit { outline: 2px solid var(--pine); }
 .sp-row.latest { outline: 1px solid var(--gold); }
+/* 내가 넣은 추측: 파란색으로 구분 */
+.sp-row.mine { background: color-mix(in srgb, #5fb3ff 22%, var(--night-2)); box-shadow: inset 4px 0 0 #5fb3ff; }
+.sp-row.mine .w { color: #bfe2ff; font-weight: 600; }
+.sp-row.mine .nk { color: #8cc8ff; }
+.sp-me-key { float: right; font-size: .75rem; color: #8cc8ff; border-left: 4px solid #5fb3ff; padding-left: 6px; }
 .sp-row.pending { opacity: .6; }
 .sp-stat { display: flex; gap: 28px; justify-content: center; }
 .sp-stat div { display: flex; flex-direction: column; align-items: center; }
@@ -128,9 +143,10 @@
 .sh-feed-row.hit .w { color: var(--pine); }
 .sh-live { width: min(1200px, 100%); }
 
+/* 방금 들어온 추측 1개 (운영자 큰 화면) */
+.sh-recent { width: min(900px, 100%); margin: 0 auto 12px; background: var(--night); border: 1px solid var(--gold); border-radius: 14px; padding: 10px 16px; text-align: left; }
+.sh-recent .sh-feed-row { font-size: clamp(1.2rem, 2.2vw, 1.7rem); }
+
 /* 모두의 추측 (참가자) */
-.sp-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.sp-tabs button { border: 1px solid var(--line); background: transparent; border-radius: 10px; padding: 8px; }
-.sp-tabs button.on { background: var(--night-2); border-color: var(--gold); color: var(--gold); }
 .sp-row .nk { display: block; font-size: .75rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-sub { font-size: .85rem; color: var(--muted); margin: 6px 0 2px; }
