@@ -31,12 +31,16 @@ export function mount(el, ctx) {
   const stage = root.querySelector('[data-r="stage"]');
 
   // 처음 들어오면 포트폴리오 만들기 (늦게 들어와도 시작 자금으로 참여). seenAt 으로 서버 시계와의 차이를 잼.
-  fs.getDoc(myRef).then(s => {
+  // 운영자가 '참가자 비우기'로 지워도 이 화면이 켜져 있으면 바로 다시 만들어 계속 참여합니다.
+  let ensuring = false;
+  const ensure = () => { if (ensuring) return; ensuring = true; fs.getDoc(myRef).then(s => {
     const clock = { seenAt: ts(), seenAtMs: Date.now() };
     if (!s.exists()) return fs.setDoc(myRef, { nick: player.nick, value: START_MONEY, hist: [START_MONEY], lastAlloc: ZERO, roundRet: 0,
       prevRank: null, rank: null, total: null, settledRound: -1, totalTime: 0, ...clock });
     return fs.updateDoc(myRef, { nick: player.nick, ...clock });
-  }).catch(e => { err = '입장하지 못했어요. 새로고침해 주세요. (' + (e?.message || e) + ')'; render(); });
+  }).catch(e => { err = '입장하지 못했어요. 새로고침해 주세요. (' + (e?.message || e) + ')'; render(); })
+    .finally(() => { ensuring = false; }); };
+  ensure();
 
   const unRoom = fs.onSnapshot(roomRef, s => {
     room = s.exists() ? s.data() : { phase: 'lobby', round: 0, runId: '' };
@@ -51,6 +55,7 @@ export function mount(el, ctx) {
   }, e => { err = '서버 연결이 끊겼어요: ' + (e?.message || e); render(); });
   const unMine = fs.onSnapshot(myRef, s => {
     mine = s.exists() ? s.data() : null;
+    if (!mine && !s.metadata?.hasPendingWrites) ensure();
     const sv = toMs(mine?.seenAt); if (sv && mine.seenAtMs) offset = sv - mine.seenAtMs;
     render();
   });
@@ -200,8 +205,14 @@ export function mount(el, ctx) {
   function vLobby() {
     return `<div class="stack"><div class="hero stack" style="gap:10px"><div class="big">입장 완료!</div><p class="muted">운영자가 게임을 시작하면 화면이 바뀝니다.</p></div>
       <div class="card stack" style="gap:8px"><b>규칙</b>
-        <p class="muted">모두 ${won(START_MONEY)}으로 시작해요. 라운드마다 뉴스를 보고, ${PRE}초 프리장에서 시초 주문을 넣고, ${T}초 본장에서 차트를 보며 언제든 슬라이더로 비율을 바꿔 주문할 수 있어요.</p>
-        <p class="muted">${ROUNDS.length}라운드 뒤 자산이 가장 많은 사람이 반도체왕! 마지막 라운드는 등락 2배 더블 찬스. 자산이 같으면 더 빨리 결정한 사람이 이겨요.</p></div></div>`;
+        <ul class="rules">
+          <li>모두 <b>${won(START_MONEY)}</b>으로 시작해요</li>
+          <li>라운드마다 뉴스를 보고 <b>${PRE}초 프리장</b>에서 시초 주문</li>
+          <li><b>${T}초 본장</b>에서는 차트를 보며 슬라이더로 언제든 비율 변경</li>
+          <li>${ROUNDS.length}라운드 뒤 자산이 가장 많은 사람이 반도체왕!</li>
+          <li>마지막 라운드는 등락 2배 <b>더블 찬스</b></li>
+          <li>자산이 같으면 더 빨리 결정한 사람이 이겨요</li>
+        </ul></div></div>`;
   }
   function vNews() {
     const r = ROUNDS[room.round];

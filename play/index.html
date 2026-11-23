@@ -36,7 +36,7 @@
     <button type="button" id="modeNew" aria-pressed="true">처음 입장</button>
     <button type="button" id="modeBack" aria-pressed="false">다시 들어오기</button>
   </div>
-  <p class="muted" id="joinHelp" style="margin:0"></p>
+  <ul class="rules" id="joinHelp" style="margin:0 auto"></ul>
   <form id="joinForm" autocomplete="off">
     <label class="muted" for="nick" style="text-align:left">이름</label>
     <input class="field" id="nick" maxlength="10" placeholder="예: 김민지" required>
@@ -50,7 +50,10 @@
 <section class="center" id="wait" hidden>
   <div class="wait-emoji" aria-hidden="true">🎄</div>
   <h1 id="waitTitle"></h1>
-  <p class="muted" style="margin:0">진행자가 게임을 시작하면 화면이 자동으로 바뀝니다. 이 화면을 켜 둔 채로 기다려 주세요.</p>
+  <ul class="rules" style="margin:0 auto">
+    <li>진행자가 게임을 시작하면 화면이 자동으로 바뀝니다.</li>
+    <li>이 화면을 켜 둔 채로 기다려 주세요.</li>
+  </ul>
 </section>
 
 <section id="game" hidden></section>
@@ -109,9 +112,10 @@ function setMode(m) {
   $("modeNew").setAttribute("aria-pressed", m === "new");
   $("modeBack").setAttribute("aria-pressed", m === "back");
   $("joinTitle").textContent = m === "new" ? "실명으로 입장해 주세요" : "다시 들어오기";
-  $("joinHelp").textContent = m === "new"
-    ? "순위표와 시상에 이 이름이 쓰여요. 숫자 4자리는 휴대폰이 바뀌거나 창을 닫았을 때 다시 들어오는 데 씁니다. 꼭 기억해 두세요."
-    : "앞서 입장했던 이름과 그때 정한 숫자 4자리를 넣으면 점수가 그대로 이어집니다.";
+  $("joinHelp").innerHTML = (m === "new"
+    ? ["순위표와 시상에 이 <b>이름</b>이 쓰여요.", "<b>숫자 4자리</b>는 휴대폰이 바뀌거나 창을 닫았을 때 다시 들어오는 데 써요.", "숫자는 꼭 기억해 두세요."]
+    : ["앞서 입장했던 <b>이름</b>과 그때 정한 <b>숫자 4자리</b>를 넣어 주세요.", "점수가 그대로 이어집니다."]
+  ).map(t => `<li>${t}</li>`).join("");
   $("joinBtn").textContent = m === "new" ? "입장하기" : "이어서 하기";
   $("joinErr").textContent = "";
 }
