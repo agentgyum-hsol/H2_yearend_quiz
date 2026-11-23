@@ -297,9 +297,13 @@ export function mount(el, { db, fs }) {
       $("shStage").innerHTML = `
         <div class="emoji" style="font-size:clamp(2.4rem,7vw,4.5rem)" aria-hidden="true">🌡️🔤🕵️</div>
         <h1 class="sh-title">H2<span>맨틀</span></h1>
-        <p class="sh-mean">비밀 단어가 하나 있어요. 아무 단어나 휴대폰에 넣으면 비밀 단어와 얼마나 가까운지 <b>유사도</b>와 <b>순위</b>가 나옵니다.<br>
-        유사도가 높은 단어를 따라가 비밀 단어를 맞히세요. 추측은 몇 번이든 괜찮아요.<br>
-        먼저 맞힐수록 높은 점수 (100점부터), 못 맞혀도 1000위 안에 가까이 가면 부분 점수.</p>
+        <ul class="rules sh-mean">
+          <li>비밀 단어가 하나 있어요</li>
+          <li>아무 단어나 휴대폰에 넣으면 비밀 단어와 얼마나 가까운지 <b>유사도</b>와 <b>순위</b>가 나옵니다</li>
+          <li>유사도가 높은 단어를 따라가 비밀 단어를 맞히세요. 추측은 몇 번이든 괜찮아요</li>
+          <li>먼저 맞힐수록 높은 점수 (100점부터)</li>
+          <li>못 맞혀도 1000위 안에 가까이 가면 부분 점수</li>
+        </ul>
         ${secretPanel()}`;
       $("shCtl").innerHTML = `<button class="btn primary" data-act="start" ${eng && table(0) ? "" : "disabled"}>1라운드 시작 <kbd>Enter</kbd></button>${resetBtn()}`;
     }
@@ -309,7 +313,7 @@ export function mount(el, { db, fs }) {
       $("shMeta").innerHTML = meta();
       $("shStage").innerHTML = `
         <div class="sh-row"><div class="sh-timer" id="shTimer"></div><div class="sh-count" id="shCount"></div></div>
-        <div class="sh-hints">${(room.hints || []).map(h => `<span class="sh-hint"><small>${h.r}위 힌트</small>${esc(h.w)}<small class="mono">${fmtSim(h.s)}</small></span>`).join("")}</div>
+        <div class="sh-hints">${(room.hints || []).map(h => `<span class="sh-hint"><small>💡 ${h.r}위 힌트</small>${esc(h.w)}<small class="mono">${fmtSim(h.s)}</small></span>`).join("")}</div>
         <div class="sh-live" id="shLive"></div>
         ${t ? "" : secretPanel(room.round)}`;
       const hn = (room.hints || []).length;
@@ -419,11 +423,12 @@ export function mount(el, { db, fs }) {
     const solvedNames = rows.filter(p => p.solvedMs != null).map(p => `<span class="chip ok">🎉 ${esc(p.nick)} <small class="mono">${fmtTime(p.solvedMs)}</small></span>`).join("");
     box.innerHTML = `
       ${solvedNames ? `<div class="sh-solved">${solvedNames}</div>` : ""}
+      ${feed.recent[0] ? `<div class="sh-recent"><div class="muted sh-feed-h">방금 들어온 추측</div>${feedRow(feed.recent[0])}</div>` : ""}
       <div class="sh-feed">
-        <div class="card"><div class="muted sh-feed-h">가장 가까운 단어</div>
-          ${feed.top.slice(0, 15).map((x, i) => feedRow(x, i + 1)).join("")}</div>
-        <div class="card"><div class="muted sh-feed-h">방금 들어온 추측</div>
-          ${feed.recent.slice(0, 15).map(x => feedRow(x)).join("")}</div>
+        <div class="card"><div class="muted sh-feed-h">가장 가까운 단어 1~10</div>
+          ${feed.top.slice(0, 10).map((x, i) => feedRow(x, i + 1)).join("")}</div>
+        ${feed.top.length > 10 ? `<div class="card"><div class="muted sh-feed-h">11~20</div>
+          ${feed.top.slice(10, 20).map((x, i) => feedRow(x, i + 11)).join("")}</div>` : ""}
       </div>`;
   }
   function feedRow(x, i) {

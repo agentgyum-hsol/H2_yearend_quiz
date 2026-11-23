@@ -174,9 +174,13 @@ export function mount(el, { db, fs }) {
       $("ehStage").innerHTML = `
         <div class="emoji" style="font-size:clamp(2.4rem,7vw,4.5rem)" aria-hidden="true">🐋⚔️🐋 🦐💥</div>
         <h1 class="eh-title">제 <span>이모지</span>야👽</h1>
-        <p class="eh-mean">이모지를 보고 어떤 속담인지 휴대폰에 써 주세요. 1인 1폰, 각자 풀기!<br>
-        맞히면 100점, 빨리 낼수록 최대 50점 더. 시간 절반이 지나면 초성 힌트가 나오고, 그 뒤에 내면 기본 50점.<br>
-        어려움 문제는 점수 2배, 제한 시간 40초. 마지막 ${HIDE_LAST}문제는 순위를 가립니다.</p>`;
+        <ul class="rules eh-mean">
+          <li>이모지를 보고 어떤 속담인지 휴대폰에 써 주세요. 1인 1폰, 각자 풀기!</li>
+          <li>맞히면 <b>100점</b>, 빨리 낼수록 <b>최대 50점</b> 더</li>
+          <li>시간 절반이 지나면 <b>초성 힌트</b>, 그 뒤에 내면 기본 50점</li>
+          <li>어려움 문제는 <b>점수 2배</b>, 제한 시간 40초</li>
+          <li>마지막 ${HIDE_LAST}문제는 순위를 가립니다</li>
+        </ul>`;
       $("ehCtl").innerHTML = `<button class="btn primary" data-act="start">1번 문제 시작 <kbd>Enter</kbd></button>${resetBtn()}`;
     }
 

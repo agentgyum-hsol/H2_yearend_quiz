@@ -29,6 +29,44 @@
   .chip { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: .9rem; }
   #game { flex: 1; display: flex; flex-direction: column; min-height: 0; }
   .danger-zone { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .danger-zone .note { font-size: .9rem; flex-basis: 100%; }
+  /* 끝난 게임 순위 */
+  .left { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .left .join { flex: 1; }
+  /* 끝난 게임이 있으면 QR을 줄이고 순위를 한 화면에 */
+  #lobby.has-st .join { flex: 0 0 auto; flex-direction: row; flex-wrap: wrap; gap: 10px 20px; padding: 14px 20px; }
+  #lobby.has-st .join h1 { font-size: 1.6rem; }
+  #lobby.has-st .join h1 br { display: none; }
+  #lobby.has-st #qr { padding: 8px; }
+  #lobby.has-st #qr img, #lobby.has-st #qr canvas { width: min(20vh, 160px); }
+  #lobby.has-st .count { font-size: 2.4rem; }
+  #standings h2 { margin: 0 0 12px; font-family: var(--display); font-weight: 400; font-size: 1.5rem; }
+  .st-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .st-game { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .st-game h3 { margin: 0 0 8px; font-family: var(--display); font-weight: 400; font-size: 1.25rem; display: flex; gap: 8px; align-items: center; }
+  .st-game h3 .e { font-family: var(--emoji); font-size: 1.1rem; }
+  .st-game ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+  .st-game li { font-size: 1.1rem; display: grid; grid-template-columns: 2.2em 1fr auto; gap: 8px; align-items: baseline; }
+  .st-game li .r { font-family: var(--mono); color: var(--muted); }
+  .st-game li .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .st-game li .s { font-family: var(--mono); font-size: .9rem; color: var(--muted); }
+  .st-game li.first .r, .st-game li.first .n { color: var(--gold); font-weight: 700; }
+  .st-game .crown { font-size: .8rem; color: var(--gold); border: 1px solid var(--gold); border-radius: 999px; padding: 0 8px; margin-left: 6px; }
+  /* 우승자 발표 */
+  #winners { position: fixed; inset: 0; z-index: 40; background: color-mix(in srgb, var(--night) 96%, #000); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; padding: 24px; text-align: center; overflow: auto; }
+  #winners h1 { margin: 0; font-family: var(--display); font-weight: 400; font-size: clamp(2.2rem, 6vw, 4.2rem); }
+  #winners h1 span { color: var(--gold); }
+  .w-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; width: min(1100px, 100%); }
+  .w-card { background: var(--night-2); border: 1px solid var(--line); border-radius: 20px; padding: 24px 18px; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  .w-card .e { font-family: var(--emoji); font-size: 2.4rem; }
+  .w-card .t { color: var(--muted); font-size: 1.1rem; }
+  .w-card .w { font-family: var(--display); font-size: clamp(2rem, 4.5vw, 3.4rem); line-height: 1.1; min-height: 1.1em; }
+  .w-card.on { border-color: var(--gold); box-shadow: 0 0 0 2px color-mix(in srgb, var(--gold) 35%, transparent); }
+  .w-card.on .w { color: var(--gold); animation: pop .5s ease-out; }
+  .w-card .sub { font-size: .9rem; color: var(--muted); min-height: 1.4em; }
+  @keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .w-card.on .w { animation: none; } }
+  .w-ctl { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 </style>
 </head>
 <body>
@@ -36,16 +74,23 @@
   <div class="brand" id="brand"></div>
   <div class="right">
     <span class="pill" id="pcount">참가 0명</span>
+    <button class="btn" id="showWinners">🏆 우승자 발표</button>
     <button class="btn" id="toLobby" hidden>← 게임 선택</button>
   </div>
 </header>
 
 <section id="lobby">
+  <div class="left">
   <div class="card join">
-    <h1>휴대폰으로 QR을 찍고<br>닉네임을 정해 주세요</h1>
+    <h1>휴대폰으로 QR을 찍고 <br>닉네임을 정해 주세요</h1>
     <div id="qr" aria-label="참가 QR 코드"></div>
     <div id="joinUrl"></div>
     <div><span class="count mono" id="bigCount">0</span> <span class="muted">명 입장</span></div>
+  </div>
+  <div class="card" id="standings" hidden>
+    <h2>게임별 순위</h2>
+    <div class="st-grid" id="stGrid"></div>
+  </div>
   </div>
   <div class="side">
     <div class="card">
@@ -58,9 +103,21 @@
     </div>
     <div class="card danger-zone">
       <button class="btn warn" id="resetPlayers">참가자 명단 비우기</button>
-      <span class="muted" id="resetNote" style="font-size:.9rem"></span>
+      <button class="btn good" id="undoReset" hidden>되돌리기</button>
+      <span class="muted note" id="resetNote"></span>
     </div>
   </div>
+</section>
+
+<section id="winners" hidden aria-live="polite">
+  <h1>올해의 <span>우승자</span></h1>
+  <div class="w-grid" id="wGrid"></div>
+  <div class="w-ctl">
+    <button class="btn primary" id="wNext">다음 공개 <kbd>Enter</kbd></button>
+    <button class="btn" id="wAll">모두 공개</button>
+    <button class="btn" id="wClose">닫기 <kbd>Esc</kbd></button>
+  </div>
+  <p class="muted" id="wNote" style="margin:0"></p>
 </section>
 
 <section id="game" hidden></section>
@@ -70,6 +127,8 @@
 <script type="module">
 import { connect } from "../shared/db.js";
 import { GAMES, EVENT_ID } from "../shared/games.js";
+import { watchWinners } from "../shared/winners.js";
+import { watchStandings, resolveWinners, TOP_N } from "../shared/standings.js";
 import { EVENT_NAME } from "../config.js";
 
 const $ = id => document.getElementById(id);
@@ -107,16 +166,108 @@ fs.onSnapshot(fs.collection(db, "players"), snap => {
     : `<span class="muted">아직 없어요</span>`;
 });
 
-// 참가자 명단 비우기: 두 번 눌러야 실행
-let armed = false;
+// 참가자 명단 비우기: 두 번 눌러야 실행하고, 지우기 전 명단을 rooms/playersBackup 에 남겨 '되돌리기'로 살림.
+// 숫자 4자리(pins)는 지우지 않아 되돌린 뒤에도 '다시 들어오기'가 그대로 됩니다.
+// 되돌리면 각 참가자 문서의 uid 도 예전 값으로 돌아가, 켜 둔 휴대폰은 닉네임을 다시 넣지 않아도 바로 이어집니다.
+const backupRef = fs.doc(db, "rooms", "playersBackup");
+let backup = null, armed = false, armTimer = null;
+const note = t => { $("resetNote").textContent = t; };
+fs.onSnapshot(backupRef, s => {
+  backup = s.exists() && (s.data().list || []).length ? s.data() : null;
+  $("undoReset").hidden = !backup;
+  if (backup) $("undoReset").textContent = `되돌리기 (${backup.list.length}명 복구)`;
+});
 $("resetPlayers").onclick = async () => {
-  if (!armed) { armed = true; $("resetNote").textContent = "한 번 더 누르면 모든 참가자가 닉네임을 다시 정해야 합니다."; setTimeout(() => { armed = false; $("resetNote").textContent = ""; }, 5000); return; }
-  armed = false;
-  const b = fs.writeBatch(db);
-  players.forEach(p => { b.delete(fs.doc(db, "players", p.id)); b.delete(fs.doc(db, "pins", p.id)); });
-  await b.commit();
-  $("resetNote").textContent = "비웠습니다.";
+  if (!players.length) { note("비울 참가자가 없어요."); return; }
+  if (!armed) {
+    armed = true; $("resetPlayers").textContent = `한 번 더 누르면 ${players.length}명을 지웁니다`;
+    note("리허설이 끝났을 때만 쓰세요. 지운 뒤에도 '되돌리기'로 살릴 수 있어요.");
+    clearTimeout(armTimer);
+    armTimer = setTimeout(() => { armed = false; $("resetPlayers").textContent = "참가자 명단 비우기"; note(""); }, 5000);
+    return;
+  }
+  armed = false; clearTimeout(armTimer); $("resetPlayers").textContent = "참가자 명단 비우기";
+  const list = players.map(p => ({ id: p.id, nick: p.nick, nickKey: p.nickKey || null, uid: p.uid || null, joinedAt: p.joinedAt ?? null }));
+  try {
+    const b = fs.writeBatch(db);
+    b.set(backupRef, { list, ids: list.map(p => p.id), at: Date.now() });
+    players.forEach(p => b.delete(fs.doc(db, "players", p.id)));
+    await b.commit();
+    note(`${list.length}명을 비웠습니다. 실수였다면 '되돌리기'를 누르세요.`);
+  } catch (e) { console.error(e); note("비우지 못했어요: " + (e?.message || e)); }
 };
+$("undoReset").onclick = async () => {
+  const bk = backup;
+  if (!bk) return;
+  const now = new Set(players.map(p => p.id));
+  const keys = new Set(players.map(p => p.nickKey || p.nick));
+  // 그사이 같은 이름으로 새로 들어온 사람이 있으면 그 사람을 그대로 두고 예전 문서는 살리지 않음
+  const back = bk.list.filter(p => !now.has(p.id) && !keys.has(p.nickKey || p.nick));
+  try {
+    const b = fs.writeBatch(db);
+    back.forEach(p => {
+      const d = { nick: p.nick, uid: p.uid, joinedAt: p.joinedAt ?? fs.serverTimestamp() };
+      if (p.nickKey) d.nickKey = p.nickKey;
+      b.set(fs.doc(db, "players", p.id), d);
+    });
+    b.delete(backupRef);
+    await b.commit();
+    const skip = bk.list.length - back.length;
+    note(`${back.length}명을 되살렸습니다.` + (skip ? ` (${skip}명은 이미 다시 들어와 있어 그대로 둠)` : ""));
+  } catch (e) { console.error(e); note("되돌리지 못했어요: " + (e?.message || e)); }
+};
+
+// 끝난 게임 순위 (로비로 돌아올 때마다 보임)
+const TITLE = Object.fromEntries(GAMES.map(g => [g.id, g]));
+let standings = {}, winners = {};
+watchStandings(db, fs, st => { standings = st; renderStandings(); if (!$("winners").hidden) renderWinners(); });
+watchWinners(db, fs, w => { winners = w; renderStandings(); if (!$("winners").hidden) renderWinners(); });
+function renderStandings() {
+  const done = GAMES.filter(g => standings[g.id]?.finished && standings[g.id].rows.length);
+  $("standings").hidden = !done.length;
+  $("lobby").classList.toggle("has-st", !!done.length);
+  const wins = resolveWinners(standings, winners);
+  $("stGrid").innerHTML = done.map(g => {
+    const rows = standings[g.id].rows.slice(0, TOP_N), w = winners[g.id];
+    return `<div class="st-game"><h3><span class="e" aria-hidden="true">${g.emoji}</span>${esc(g.title)}</h3>
+      <ol>${rows.map(r => {
+        const champ = w ? w.pid === r.id : wins[g.id]?.nick === r.nick;
+        return `<li class="${r.rank === 1 ? "first" : ""}"><span class="r">${r.rank}위</span><span class="n">${esc(r.nick)}${champ ? `<span class="crown">${w ? "우승" : "우승 예정"}</span>` : ""}</span><span class="s">${esc(r.label)}</span></li>`;
+      }).join("")}</ol></div>`;
+  }).join("");
+}
+
+// 우승자 발표: 게임 순서대로 한 명씩 공개
+let wShown = 0;
+function renderWinners() {
+  const wins = resolveWinners(standings, winners);
+  $("wGrid").innerHTML = GAMES.map((g, i) => {
+    const w = wins[g.id], on = i < wShown;
+    let sub = "";
+    if (on && w) {
+      const bits = [];
+      if (w.skipped.length) bits.push(`${w.skipped.map(esc).join(", ")}님은 다른 게임 우승이라 ${w.rank}위가 우승`);
+      if (w.tied.length) bits.push(`${w.tied.map(esc).join(", ")} 공동 1위`);
+      if (!w.confirmed) bits.push("운영자 확정 전");
+      sub = bits.join(" · ");
+    }
+    return `<div class="w-card ${on && w ? "on" : ""}"><div class="e" aria-hidden="true">${g.emoji}</div><div class="t">${esc(g.title)}</div>
+      <div class="w">${on ? (w ? esc(w.nick) : `<span class="muted" style="font-size:.5em">아직 결과가 없어요</span>`) : "?"}</div><div class="sub">${sub}</div></div>`;
+  }).join("");
+  $("wNext").disabled = wShown >= GAMES.length;
+  $("wNote").textContent = Object.values(wins).every(Boolean) ? "" : "끝나지 않은 게임은 결과가 나오면 자동으로 채워집니다.";
+}
+function openWinners() { wShown = 0; $("winners").hidden = false; renderWinners(); $("wNext").focus(); }
+function closeWinners() { $("winners").hidden = true; }
+$("showWinners").onclick = openWinners;
+$("wNext").onclick = () => { if (wShown < GAMES.length) { wShown++; renderWinners(); } };
+$("wAll").onclick = () => { wShown = GAMES.length; renderWinners(); };
+$("wClose").onclick = closeWinners;
+addEventListener("keydown", e => {
+  if ($("winners").hidden) return;
+  if (e.key === "Escape") closeWinners();
+  else if (e.key === "Enter" && document.activeElement?.id !== "wClose" && document.activeElement?.id !== "wAll") { e.preventDefault(); $("wNext").click(); }
+});
 
 // 현재 게임 상태에 따라 화면 전환
 let unmount = null, mountedId = null;
@@ -129,7 +280,8 @@ fs.onSnapshot(fs.doc(db, "rooms", "current"), async snap => {
   mountedId = id;
   const el = $("game");
   el.innerHTML = "";
-  $("lobby").hidden = !!id; el.hidden = !id; $("toLobby").hidden = !id;
+  $("lobby").hidden = !!id; el.hidden = !id; $("toLobby").hidden = !id; $("showWinners").hidden = !!id;
+  if (id) closeWinners();
   if (!id) return;
   try {
     const mod = await import(`../games/${id}/host.js`);
