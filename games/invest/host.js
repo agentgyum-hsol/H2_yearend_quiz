@@ -1,15 +1,15 @@
 // 반도체왕 임삼성: 운영자(프로젝터) 화면
 // mount(el, ctx) → unmount 함수. ctx = { db, fs, gameId, joinUrl? }
-// 진행: 로비 → (라운드마다) 뉴스·시초 주문 → 30초 실시간 장 → 결과 → … → 최종(TOP 5, 우승 확정)
-import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, TOP_N, moveOf, pricePath, valueAt, indexSeries,
+// 진행: 로비 → (라운드마다) 뉴스 → 프리장 20초(시초 주문) → 본장 30초(자동 진행) → 자동 마감·결과 → … → 최종(TOP 5, 우승 확정)
+import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS, TOP_N, moveOf, pricePath, valueAt, indexSeries,
   toMs, won, pct, cls, arrow, esc, rankList, lineChart, loadCss } from './data.js';
 import { watchWinners, pickWinner, otherGameTitle, confirmWinner, clearWinner } from '../../shared/winners.js';
 
 const GAME = 'invest';
 const TITLES = { emoji: '이게 내 이모지야', invest: '반도체왕 임삼성', similar: 'H2맨틀' };
-const PHASE_LABEL = { news: '뉴스·시초 주문', market: '실시간 장', reveal: '결과' };
+const PHASE_LABEL = { news: '뉴스', market: '프리장 → 본장', reveal: '결과' };
 const newRun = () => Date.now().toString(36);
-const T = MARKET_SECONDS;
+const T = MARKET_SECONDS, PRE = PRE_SECONDS;
 
 export function mount(el, ctx) {
   const { db, fs } = ctx;
@@ -51,18 +51,20 @@ export function mount(el, ctx) {
   // 장 중에는 1초마다 다시 그리고, 시간이 다 되면 자동 정산
   const tickTimer = setInterval(() => {
     if (room?.phase !== 'market') return;
-    if (elapsedMs() >= (T + 1.5) * 1000 && ui.settling !== tradeKey) settle();
+    if (elapsedMs() >= (T + 2.5) * 1000 && ui.settling !== tradeKey) settle();
     render();
   }, 1000);
 
   function showErr(e) { ui.err = '서버 연결에 문제가 있어요: ' + (e?.message || e); render(); }
-  const elapsedMs = () => Date.now() - (room?.marketStartMs || Date.now());
+  // 본장 시작 기준 경과 시간(운영자 시계). 음수면 프리장
+  const elapsedMs = () => (room?.marketStartMs ? Date.now() - (room.marketStartMs + PRE * 1000) : -PRE * 1000);
+  const isPre = () => room?.phase === 'market' && elapsedMs() < 0;
   const curTick = () => Math.max(0, Math.min(T, Math.floor(elapsedMs() / 1000)));
 
   /* ---------- 주문 기록 → 자산 ---------- */
   // 참가자별 주문을 시간순으로 모아 tick 으로 바꿈. 장 시작 전 주문은 0초(시초가)로 체결.
   function tradesByPid() {
-    const start = toMs(room.marketStart);
+    const open = toMs(room.marketStart), start = open == null ? null : open + PRE * 1000; // 서버 시각 기준 본장 시작
     const by = {};
     trades.map(t => ({ ...t, ms: toMs(t.at) ?? t.atMs }))
       .filter(t => t.ms != null && (!start || t.ms - start <= T * 1000 + 500))
@@ -95,7 +97,9 @@ export function mount(el, ctx) {
     if (ui.settling === tradeKey) return;
     ui.settling = tradeKey;
     return act(async () => {
-      const r = room.round, by = tradesByPid(), start = toMs(room.marketStart);
+      // 마감 직전 주문이 구독에 아직 안 들어왔을 수 있어 서버에서 한 번 더 읽음
+      try { const snap = await fs.getDocs(tradeCol(room.runId, room.round)); trades = snap.docs.map(d => d.data()); } catch (e) { /* 구독 목록으로 진행 */ }
+      const r = room.round, by = tradesByPid(), open = toMs(room.marketStart), start = open == null ? null : open + PRE * 1000;
       const before = rankList(ports).map(p => p.id);
       const next = {};
       Object.entries(ports).forEach(([id, p]) => {
@@ -219,10 +223,10 @@ export function mount(el, ctx) {
     } else {
       steps = `<span class="step">R${room.round + 1}/${ROUNDS.length}</span>` +
         ['news', 'market', 'reveal'].map(p => `<span class="step ${p === room.phase ? 'on' : ''}">${PHASE_LABEL[p]}</span>`).join('');
-      if (room.phase === 'news') btns = `<button class="btn primary" data-a="open" ${busy}>${T}초 장 시작!</button>`;
+      if (room.phase === 'news') btns = `<button class="btn primary" data-a="open" ${busy}>프리장 열기 (${PRE}초 뒤 본장 자동 시작)</button>`;
       if (room.phase === 'market') {
         const over = elapsedMs() >= T * 1000;
-        btns = `<button class="btn primary" data-a="settle" ${over && !ui.busy ? '' : 'disabled'}>${over ? '마감 · 결과 공개' : '장 진행 중…'}</button>`;
+        btns = `<button class="btn primary" data-a="settle" ${over && !ui.busy ? '' : 'disabled'}>${over ? '마감 · 결과 공개' : isPre() ? '프리장 진행 중…' : '본장 진행 중…'}</button>`;
       }
       if (room.phase === 'reveal') {
         const done = ui.revealed > ASSETS.length;
@@ -242,7 +246,7 @@ export function mount(el, ctx) {
       <div class="stack">
         <div class="eyebrow">송년회 투자 배틀 · 개인전</div>
         <h1>반도체왕 <span style="color:var(--accent)">임삼성</span></h1>
-        <p class="muted" style="font-size:1.15rem;max-width:60ch">모두 ${won(START_MONEY)}으로 시작합니다. 라운드마다 뉴스를 보고 시초 주문을 넣은 뒤, ${T}초 동안 열리는 실시간 장에서 언제든 종목을 갈아탈 수 있어요. ${ROUNDS.length}라운드 뒤 자산이 가장 많은 사람이 올해의 반도체왕! 마지막 라운드는 등락 2배 더블 찬스입니다.</p>
+        <p class="muted" style="font-size:1.15rem;max-width:60ch">모두 ${won(START_MONEY)}으로 시작합니다. 라운드마다 뉴스를 보고, ${PRE}초 프리장에서 시초 주문을 넣고, ${T}초 본장에서 차트를 보며 언제든 비율을 바꿀 수 있어요. ${ROUNDS.length}라운드 뒤 자산이 가장 많은 사람이 올해의 반도체왕! 마지막 라운드는 등락 2배 더블 찬스입니다.</p>
         <div class="card stack" style="gap:10px">
           ${ASSETS.map(a => `<div class="asset-li"><div class="asset-ic" style="background:${a.color}">${a.short}</div><div><b>${a.name}</b> <span class="muted" style="font-size:.9rem">${a.desc}</span></div></div>`).join('')}
         </div>
@@ -272,18 +276,38 @@ export function mount(el, ctx) {
 
   function vNews() {
     const r = ROUNDS[room.round];
-    const ordered = new Set(trades.map(t => t.pid)).size, n = Object.keys(ports).length;
     return `<div class="stack" style="gap:24px">
       <div class="eyebrow">라운드 ${room.round + 1} / ${ROUNDS.length} · 속보</div>
       ${r.double ? doubleBanner() : ''}
       <article class="news"><div class="when">${r.when}</div><h2>${r.title}</h2><ul>${r.bullets.map(b => `<li>${b}</li>`).join('')}</ul></article>
       <div class="boss"><div class="face" aria-hidden="true">임</div><div class="bubble"><b>임삼성 회장</b><br>${r.boss}</div></div>
-      <div class="card row" style="justify-content:space-between"><b>시초 주문 <span class="num" style="color:var(--accent)">${ordered}</span> / ${n}명</b><span class="muted">폰에서 미리 비율을 넣어 두면 장 시작과 동시에 체결돼요. 안 넣으면 지난 라운드 비율 그대로.</span></div>
+      <div class="card row" style="justify-content:space-between"><b>다음: ${PRE}초 프리장 → ${T}초 본장</b><span class="muted">지금은 폰에서 비율을 미리 정해 둘 수 있어요. 주문은 프리장부터 받아요.</span></div>
+      ${room.round > 0 ? `<div class="stack" style="gap:10px"><div class="eyebrow">현재 TOP 10</div>${board(rankList(ports), 10, 'total')}</div>` : ''}
+    </div>`;
+  }
+
+  function vPre() {
+    const r = ROUNDS[room.round], left = Math.ceil(-elapsedMs() / 1000);
+    const ordered = new Set(trades.map(t => t.pid)).size, n = Object.keys(ports).length, p = n ? Math.round(ordered / n * 100) : 0;
+    return `<div class="stack" style="gap:24px">
+      <div class="eyebrow">라운드 ${room.round + 1} · 프리장${r.double ? ' · 더블 찬스 ×2' : ''}</div>
+      <div class="row" style="gap:24px;align-items:stretch">
+        <div class="card stack" style="gap:6px;align-items:center;justify-content:center;min-width:220px">
+          <div class="eyebrow" style="color:var(--accent)">본장까지</div>
+          <div class="clock num" style="font-size:clamp(4rem,10vw,7rem);color:${left <= 5 ? 'var(--up)' : 'var(--accent)'}">${left}<span>초</span></div>
+        </div>
+        <div class="card stack" style="gap:14px;flex:1;min-width:260px;justify-content:center">
+          <h2 style="font-size:clamp(1.4rem,3vw,2.2rem)">${r.title}</h2>
+          <div class="row" style="justify-content:space-between"><b style="font-size:1.3rem">시초 주문 <span class="num" style="color:var(--accent)">${ordered}</span> / ${n}명</b><span class="muted">프리장 주문은 본장 시작 가격으로 체결돼요. 안 내면 지난 라운드 비율 그대로.</span></div>
+          <div class="meter"><span style="width:${p}%"></span></div>
+        </div>
+      </div>
       ${room.round > 0 ? `<div class="stack" style="gap:10px"><div class="eyebrow">현재 TOP 10</div>${board(rankList(ports), 10, 'total')}</div>` : ''}
     </div>`;
   }
 
   function vMarket() {
+    if (isPre()) return vPre();
     const r = ROUNDS[room.round], tick = curTick(), left = Math.max(0, T - Math.floor(elapsedMs() / 1000));
     const series = INVEST.map(a => ({ color: a.color, data: pricePath(room.round, a.id), w: 3.5 }));
     const live = rankList(liveValues(tick));

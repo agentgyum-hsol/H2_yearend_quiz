@@ -1,6 +1,7 @@
 // 반도체왕 임삼성: 종목, 라운드 시나리오, 30초 실시간 장 가격 흐름과 계산
 export const START_MONEY = 100_000_000; // 1억원
 export const MARKET_SECONDS = 30;       // 라운드마다 열리는 실시간 장 길이(초)
+export const PRE_SECONDS = 20;          // 본장 전 프리장(준비·시초 주문) 길이(초)
 export const TRADE_COOLDOWN_MS = 1000;  // 폰에서 주문 사이 최소 간격
 export const TOP_N = 5;                 // 최종 화면에 공개하는 순위
 
