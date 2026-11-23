@@ -1,5 +1,5 @@
 // 이모지 퀴즈 운영자 화면 (프로젝터용)
-import { ALL, MAIN, isReserve, LVL_NAME, GRACE_MS, HIDE_LAST, durationFor, multFor, hintTime, isCorrect, points, chosung } from "./questions.js";
+import { ALL, MAIN, isReserve, LVL_NAME, GRACE_MS, HIDE_LAST, durationFor, multFor, hintTime, isCorrect, similarity, CLOSE_HIDE, normalize, points, chosung } from "./questions.js";
 import { ROOM, loadStyle, esc, ranked } from "./common.js";
 import { ms } from "../../shared/db.js";
 import { GAMES } from "../../shared/games.js";
@@ -23,6 +23,7 @@ export function mount(el, { db, fs }) {
     <div class="eh-top"><div class="display" style="font-size:1.5rem">제 <span style="color:var(--dancheong)">이모지</span>야👽</div><div class="meta" id="ehMeta"></div></div>
     <div class="eh-progress"><i id="ehBar" style="width:0%"></i></div>
     <div class="eh-stage" id="ehStage" aria-live="polite"></div>
+    <div class="eh-wrong" id="ehWrong" aria-label="지금 들어온 오답"></div>
     <div class="eh-controls" id="ehCtl"></div>
   </div>`;
   const $ = id => el.querySelector("#" + id);
@@ -168,6 +169,7 @@ export function mount(el, { db, fs }) {
     const done = room.phase === "final" || isReserve(room.q) ? MAIN : room.q + (room.phase === "reveal" ? 1 : 0);
     $("ehBar").style.width = room.phase === "lobby" ? "0%" : `${(done / MAIN) * 100}%`;
     clearInterval(tick); tick = null;
+    renderWrong();
 
     if (room.phase === "lobby") {
       $("ehMeta").innerHTML = `<span class="pill">${MAIN}문제</span><span class="pill">참가 ${players.length}명</span>`;
@@ -175,7 +177,8 @@ export function mount(el, { db, fs }) {
         <div class="emoji" style="font-size:clamp(2.4rem,7vw,4.5rem)" aria-hidden="true">🐋⚔️🐋 🦐💥</div>
         <h1 class="eh-title">제 <span>이모지</span>야👽</h1>
         <ul class="rules eh-mean">
-          <li>이모지를 보고 어떤 속담인지 휴대폰에 써 주세요. 1인 1폰, 각자 풀기!</li>
+          <li>이모지를 보고 정답을 휴대폰에 써 주세요. 1인 1폰, 각자 풀기!</li>
+          <li>속담으로 몸풀고, 사자성어·영화/드라마 제목·직장인 말이 섞여 나와요. 문제마다 <b>유형</b>을 알려 드려요</li>
           <li>맞히면 <b>100점</b>, 빨리 낼수록 <b>최대 50점</b> 더</li>
           <li>시간 절반이 지나면 <b>초성 힌트</b>, 그 뒤에 내면 기본 50점</li>
           <li>어려움 문제는 <b>점수 2배</b>, 제한 시간 40초</li>
@@ -188,6 +191,7 @@ export function mount(el, { db, fs }) {
       $("ehMeta").innerHTML = meta(q);
       $("ehStage").innerHTML = `
         <div class="qnum mono muted">${isReserve(room.q) ? "동점 결승 문제" : `Q${room.q + 1}`}${multFor(q) > 1 ? " · 점수 2배" : ""}</div>
+        ${q.t ? `<div class="eh-type">${esc(q.t)}</div>` : ""}
         ${emojiHtml(q)}
         <div class="eh-row"><div class="eh-timer" id="ehTimer"></div><div class="eh-count" id="ehCount"></div></div>
         <div class="eh-hint" id="ehHint"></div>
@@ -255,14 +259,14 @@ export function mount(el, { db, fs }) {
       }).join("");
       let winnerHtml = "";
       if (done && confirmed) {
-        winnerHtml = `<div class="eh-champ on"><span class="emoji" aria-hidden="true">👑</span><span class="nm">${esc(confirmed.nick)}</span><span class="sc">오늘의 속담왕</span></div>`;
+        winnerHtml = `<div class="eh-champ on"><span class="emoji" aria-hidden="true">👑</span><span class="nm">${esc(confirmed.nick)}</span><span class="sc">오늘의 이모지왕</span></div>`;
       } else if (done && pick.tied.length) {
         winnerHtml = `<p class="eh-note" style="color:var(--gold)">우승 자리에 ${pick.tied.map(x => esc(x.nick)).join(", ")} 님이 동점이에요. 예비 문제로 결승을 진행하세요.</p>`;
       } else if (done && pick.winner) {
         winnerHtml = `<p class="eh-note" style="font-size:1.1rem">${pick.skipped.length ? `${pick.skipped.map(x => esc(x.nick)).join(", ")} 님은 이미 다른 게임에서 우승해서, ` : ""}우승은 <b style="color:var(--gold)">${esc(pick.winner.nick)}</b> 님 (${pick.winner.rank}위)</p>`;
       }
       $("ehStage").innerHTML = `
-        <h1 class="eh-title" style="font-size:clamp(2rem,5vw,3.6rem)">오늘의 <span>속담왕</span>은?</h1>
+        <h1 class="eh-title" style="font-size:clamp(2rem,5vw,3.6rem)">오늘의 <span>이모지왕</span>은?</h1>
         ${winnerHtml}
         <div class="eh-final">${rows}</div>`;
       const left = ALL.length - (room.reserveNext ?? MAIN);
@@ -280,7 +284,7 @@ export function mount(el, { db, fs }) {
 
   function meta(q) {
     const label = isReserve(room.q) ? `<span class="pill">결승</span>` : `<span class="pill">${String(room.q + 1).padStart(2, "0")} / ${MAIN}</span>`;
-    return `<span class="pill lvl-${q.lvl}">${LVL_NAME[q.lvl]}${multFor(q) > 1 ? " ×2" : ""}</span>${label}<span class="pill">참가 ${players.length}명</span>`;
+    return `${q.t ? `<span class="pill type">${esc(q.t)}</span>` : ""}<span class="pill lvl-${q.lvl}">${LVL_NAME[q.lvl]}${multFor(q) > 1 ? " ×2" : ""}</span>${label}<span class="pill">참가 ${players.length}명</span>`;
   }
   function emojiHtml(q, small) {
     return `<div class="eh-emoji" ${small ? 'style="font-size:clamp(2rem,6vh,3.6rem)"' : ""} aria-label="이모지 문제">${q.e.map(r => `<span>${r}</span>`).join("")}</div>`;
@@ -304,6 +308,36 @@ export function mount(el, { db, fs }) {
   function renderLive() {
     const c = $("ehCount"); if (!c) return;
     c.innerHTML = `제출 <b>${answers.length}</b> / ${players.length}`;
+    renderWrong();
+  }
+  // ── 오답 전광판: 문제 푸는 동안 들어온 틀린 답을 큰 화면에 실시간으로 ──
+  // 같은 답(띄어쓰기 무시)은 한 칸으로 묶어 ×N, 최근 것이 앞. 정답과 너무 비슷한 답은 글자를 가리고 "아깝다"만.
+  const WRONG_MAX = 12;
+  let seenWrong = new Set(), seenQ = null;
+  function renderWrong() {
+    const w = $("ehWrong"); if (!w) return;
+    if (room?.phase !== "question") { w.dataset.html = ""; w.innerHTML = ""; return; }
+    const q = ALL[room.q], groups = new Map();
+    if (seenQ !== room.q) { seenQ = room.q; seenWrong = new Set(); }
+    let close = 0;
+    for (const a of answers) {
+      if (!a.text || !markOf(a) || isCorrect(q, a.text)) continue;
+      if (similarity(q, a.text) >= CLOSE_HIDE) { close++; continue; }
+      const key = normalize(a.text), at = ms(a.at) ?? Date.now();
+      const g = groups.get(key) || { key, text: a.text, nicks: [], at: 0 };
+      g.nicks.push(a.nick); g.at = Math.max(g.at, at);
+      groups.set(key, g);
+    }
+    const list = [...groups.values()].sort((a, b) => b.at - a.at);
+    const shown = list.slice(0, WRONG_MAX);
+    const more = list.length - shown.length;
+    const html = (shown.length || close ? `<div class="eh-wrong-h">🙊 지금 들어온 오답</div>` : "")
+      + shown.map(g => `<span class="eh-wbub${g.nicks.length > 1 ? " many" : ""}${seenWrong.has(g.key + g.nicks.length) ? "" : " new"}"><b>${esc(g.text)}</b>${g.nicks.length > 1
+          ? `<i>×${g.nicks.length}</i>` : `<small>${esc(g.nicks[0])}</small>`}</span>`).join("")
+      + (close ? `<span class="eh-wbub close"><b>🤏 아깝다!</b><i>×${close}</i></span>` : "")
+      + (more > 0 ? `<span class="eh-wbub more">외 ${more}개</span>` : "");
+    shown.forEach(g => seenWrong.add(g.key + g.nicks.length));
+    if (w.dataset.html !== html) { w.dataset.html = html; w.innerHTML = html; }
   }
 
   let busy = false;
