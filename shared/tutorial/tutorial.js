@@ -4,11 +4,11 @@
 // 데이터
 //   rooms/tutorial                     {on, gameId, step, run}   운영자가 씀
 //   rooms/tutorial/practice/{pid}      {run, game, nick, at, ...}  참가자가 자기 연습 기록을 씀 (점수와 무관)
-//     이모지: {ok, tries}   H2맨틀: {best: [{w, s, r}], tries, solved}   임삼성: {alloc}
+//     이모지: {ok, tries}   H2맨틀: {words, best, tries, solved} (games/similar/practice.js)   임삼성: {alloc}
 //
 // 운영자: mountTutorialHost({db, fs}) 한 번 → openTutorial(gameId) 로 시작
 // 참가자: watchTutorial({db, fs, uid}) 한 번 (play/index.html)
-import { loadTutorial, esc, EMOJI_PRACTICE, INVEST_PRACTICE, investResult, similarPractice, similarRow } from "./content.js";
+import { loadTutorial, esc, EMOJI_PRACTICE, INVEST_PRACTICE, investResult } from "./content.js";
 
 const css = new URL("./tutorial.css", import.meta.url).href;
 function loadCss() {
@@ -50,7 +50,9 @@ export function mountTutorialHost({ db, fs }) {
     if (run == null) return;
     pUnsub = fs.onSnapshot(fs.query(practiceCol(db, fs), fs.where("run", "==", run)), s => {
       docs = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.game === st?.gameId);
-      if (tut?.steps[st.step]?.practice) render();
+      const step = tut?.steps[st.step];
+      if (step?.sync) step.sync(docs, { db, fs, run });
+      if (step?.practice) render();
     });
   }
   function render() {
@@ -152,10 +154,8 @@ function saver({ db, fs, player, run, game }) {
   return data => fs.setDoc(ref, { run, game, nick: player.nick, at: Date.now(), ...data }, { merge: true }).catch(e => console.warn("practice", e));
 }
 
-let _qs = null, _sim = null;
+let _qs = null;
 const questionsMod = () => (_qs ||= import("../../games/emoji/questions.js").catch(() => ({})));
-const similarTools = () => (_sim ||= Promise.all([import("./similar-practice.js"), import("../../games/similar/common.js").catch(() => ({}))])
-  .then(([P, C]) => ({ p: similarPractice(P, C.TOP_SIM_MIN ?? 0.8, C.norm, C.resolve), CUT: C.RANK_CUTOFF ?? 1000, gap: C.MIN_GAP_MS ?? 1500 })));
 
 const PRACTICE = {
   emoji(box, ctx) {
@@ -195,51 +195,17 @@ const PRACTICE = {
     };
   },
 
+  // 본 게임과 같은 화면 (games/similar/practice.js)
   similar(box, ctx) {
-    const save = saver(ctx);
-    const mine = []; let solved = false, tries = 0, last = 0, phase = "play", tools = null;
-    box.innerHTML = `<form class="tu-form"><input class="field" maxlength="20" placeholder="아무 단어나 넣어 보세요" autocomplete="off" enterkeyhint="send"><button class="btn primary">추측</button></form>
-      <p class="tu-msg" role="status"></p><div class="tu-mine"></div><p class="muted tu-note">연말 하면 떠오르는 단어예요. 모두의 추측은 큰 화면에서 보여요.</p>`;
-    const form = box.querySelector("form"), input = box.querySelector("input"), msg = box.querySelector(".tu-msg");
-    similarTools().then(t => { tools = t; });
-    const draw = () => {
-      if (!tools) return;
-      const rows = [...mine].sort((a, b) => (a.r ?? 1e9) - (b.r ?? 1e9)).slice(0, 12);
-      box.querySelector(".tu-mine").innerHTML = rows.length
-        ? `<table class="tu-table sm"><thead><tr><th>내 추측</th><th>유사도</th><th>순위</th><th></th></tr></thead><tbody>${rows.map(x => similarRow(esc(x.w), x, tools.CUT)).join("")}</tbody></table>` : "";
-    };
-    form.onsubmit = async e => {
-      e.preventDefault();
-      if (solved || phase === "reveal") return;
-      tools ||= await similarTools();
-      const raw = input.value.trim();
-      if (!raw) return;
-      if (Date.now() - last < tools.gap) { msg.className = "tu-msg"; msg.textContent = "조금 천천히!"; return; }
-      last = Date.now();
-      const x = tools.p.lookup(raw);
-      if (!x) { msg.className = "tu-msg bad"; msg.textContent = "한글 단어를 넣어 주세요"; return; }
-      input.value = "";
-      tries++;
-      if (!mine.some(m => m.w === x.w)) mine.push(x);
-      solved = x.r === 0;
-      msg.className = "tu-msg " + (solved ? "good" : "");
-      msg.textContent = solved ? `정답! ${x.w}` : x.r == null ? `${x.w}: ${tools.CUT}위 밖이거나 모르는 단어예요` : `${x.w}: 유사도 ${x.s.toFixed(2)}, ${x.r}위`;
-      if (solved) { input.disabled = true; form.querySelector("button").disabled = true; }
-      draw();
-      // 큰 화면에는 각자 가장 가까운 추측 몇 개만 보냄 (쓰기 줄이기)
-      const best = mine.filter(m => m.r != null && m.r > 0).sort((a, b) => a.r - b.r).slice(0, 3).map(({ w, s, r }) => ({ w, s, r }));
-      save({ best, tries, solved });
-    };
+    let inner = null, want = null, dead = false;
+    import("../../games/similar/practice.js").then(m => {
+      if (dead) return;
+      inner = m.mountPracticePhone(box, ctx);
+      if (want) inner.phase(want);
+    }).catch(e => { console.warn("similar practice", e); box.innerHTML = `<p class="muted">연습 화면을 불러오지 못했어요. 새로고침해 주세요.</p>`; });
     return {
-      async phase(p) {
-        phase = p;
-        if (p !== "reveal") return;
-        tools ||= await similarTools();
-        form.hidden = true; box.querySelector(".tu-note").hidden = true;
-        msg.className = "tu-msg " + (solved ? "good" : "");
-        msg.innerHTML = `정답: <b>${esc(tools.p.word)}</b>${solved ? " 🎉 맞혔어요!" : ""}`;
-        draw();
-      },
+      phase(p) { want = p; inner && inner.phase(p); },
+      destroy() { dead = true; inner && inner.destroy(); },
     };
   },
 

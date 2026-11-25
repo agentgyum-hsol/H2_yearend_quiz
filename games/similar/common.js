@@ -70,6 +70,25 @@ export function bar(r, key) {
   return `<span class="${cls}" style="--w:${(h * 100).toFixed(1)}%;--c:${c}"><i class="L"></i><i class="R"></i></span>`;
 }
 
+// 큰 화면 "모두의 추측" 판: 방금 들어온 추측 + 가장 가까운 단어 1~10, 11~20. 본 게임과 연습 라운드가 같이 씀
+// feed = {top: [{w, s, r, nick}], recent: [{w, s, r, nick} | {nick, hit}]}
+const FEED_HEAD = `<div class="sh-feed-row sh-feed-head"><span></span><span>단어</span><span>추측한 사람</span><span class="s">단어 유사도</span><span class="r">순위</span></div>`;
+export function feedRow(x, i, round) {
+  if (x.hit) return `<div class="sh-feed-row hit"><span class="i"></span><span class="w">🎉 정답!</span><span class="n">${esc(x.nick)}</span><span class="s"></span><span class="r"></span></div>`;
+  return `<div class="sh-feed-row"><span class="i mono muted">${i ?? ""}</span><span class="w">${esc(x.w)}</span><span class="n">${esc(x.nick)}</span>
+    <span class="s mono">${fmtSim(x.s)}</span><span class="r">${bar(x.r, `${round}:${x.w}`)}<small class="mono">${fmtRank(x.r)}</small></span></div>`;
+}
+export function feedBoard(feed, round) {
+  const top = feed?.top || [];
+  return `${feed?.recent?.[0] ? `<div class="sh-recent"><div class="muted sh-feed-h">방금 들어온 추측</div>${FEED_HEAD}${feedRow(feed.recent[0], null, round)}</div>` : ""}
+    <div class="sh-feed">
+      <div class="card"><div class="muted sh-feed-h">가장 가까운 단어 1~10</div>${FEED_HEAD}
+        ${top.slice(0, 10).map((x, i) => feedRow(x, i + 1, round)).join("")}</div>
+      ${top.length > 10 ? `<div class="card"><div class="muted sh-feed-h">11~20</div>${FEED_HEAD}
+        ${top.slice(10, 20).map((x, i) => feedRow(x, i + 11, round)).join("")}</div>` : ""}
+    </div>`;
+}
+
 // 힌트 반짝임: 처음 본 때부터 HINT_FLASH_MS 동안. 다시 그려져도 이어서 반짝이도록 지난 시간만큼 앞당겨 시작.
 const hintSeen = new Map();
 export function hintFlash(h) {

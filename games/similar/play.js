@@ -124,6 +124,9 @@ export function mount(el, { db, fs, player }) {
     const w = hit.w;
     const mine = fb?.list || [];
     if (mine.some(x => x.w === w) || pending.includes(w)) { lastWord = w; input.value = ""; renderList(); return say(`"${w}"는 이미 넣은 단어예요`); }
+    if ((room.hints || []).some(h => h.w === w)) { input.value = ""; return say(`"${w}"는 힌트로 공개된 단어라 넣을 수 없어요 (횟수에 안 들어가요)`); }
+    const f = feed && feed.round === room.round ? feed : null;
+    if ((f?.seen || f?.top?.map(x => x.w) || []).includes(w)) { input.value = ""; return say(`"${w}"는 이미 다른 사람이 넣은 단어예요. 모두의 추측에서 확인하세요 (횟수에 안 들어가요)`); }
     const wait = lastSent + MIN_GAP_MS - Date.now();
     if (wait > 0) return say("조금만 천천히 넣어 주세요");
     lastSent = Date.now();
@@ -142,6 +145,7 @@ export function mount(el, { db, fs, player }) {
   const nk = x => (x.nick ? `<small class="nk">${esc(x.nick)}</small>` : "");
   function rowHtml(x, i, cls = "") {
     if (x.pending) return `<div class="sp-row pending ${cls}"><span class="i mono">${i}</span><span class="w">${esc(x.w)}</span><span class="s muted">채점 중…</span><span class="r"></span></div>`;
+    if (x.dup) return `<div class="sp-row ${cls}"><span class="i mono">${i}</span><span class="w">${esc(x.w)}</span><span class="s muted">${x.dup === 2 ? "힌트 단어" : "이미 나온 단어"}</span><span class="r"></span></div>`;
     if (x.u) return `<div class="sp-row ${cls}"><span class="i mono">${i}</span><span class="w">${esc(x.w)}</span><span class="s muted">모르는 단어</span><span class="r"></span></div>`;
     if (x.hit) return `<div class="sp-row hit ${cls}"><span class="i"></span><span class="w">🎉 정답!${nk(x)}</span><span class="s"></span><span class="r"></span></div>`;
     return `<div class="sp-row ${x.r === 0 ? "hit" : ""} ${x.mine ? "mine" : ""} ${cls}"><span class="i mono">${i ?? ""}</span><span class="w">${esc(x.w)}${nk(x)}</span><span class="s mono">${fmtSim(x.s)}</span>
@@ -159,7 +163,7 @@ export function mount(el, { db, fs, player }) {
     const f = feed && feed.round === room.round ? feed : null;
     const merged = new Map();
     for (const x of f?.top || []) merged.set(x.w, { ...x });
-    for (const x of list) if (!x.u) merged.set(x.w, { ...merged.get(x.w), ...x, nick: "나", mine: true });
+    for (const x of list) if (!x.u && !x.dup) merged.set(x.w, { ...merged.get(x.w), ...x, nick: "나", mine: true });
     const rows = [...merged.values()].filter(x => x.r !== 0).sort((a, b) => (b.s ?? -99) - (a.s ?? -99));
     const solvedLine = f?.solved?.length ? `<div class="sp-sub">맞힌 사람: ${f.solved.map(esc).join(", ")}</div>` : "";
     box.innerHTML = solvedLine + (rows.length ? rows.map((x, i) => rowHtml(x, i + 1)).join("")
