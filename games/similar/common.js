@@ -27,7 +27,8 @@ export const HINT_RANKS = [100, 30, 10]; // 운영자가 차례로 공개할 수
 export const FEED_TOP = 30;              // 모두의 추측: 가까운 단어 몇 개까지 공개
 export const FEED_RECENT = 1;            // 방금 들어온 추측: 운영자 큰 화면에만 1개
 export const FEED_EVERY_MS = 2000;       // 모두의 추측 갱신 간격 (Firestore 읽기 한도 보호)
-export const TOP_SIM_MIN = 0.80;         // 가장 가까운 단어(1위)의 유사도가 이보다 낮으면 전체를 같은 비율로 올림 (순위는 그대로)
+export const TOP_SIM_MIN = 0.90;         // 가장 가까운 단어(1위)의 유사도가 이보다 낮으면 전체를 같은 비율로 올림 (순위는 그대로)
+export const HINT_FLASH_MS = 10_000;     // 새 힌트가 반짝이는 시간
 
 // [가정] 점수: 맞힌 순서대로 100, 98, 96 … 최소 50. 못 맞히면 가장 가까이 간 순위로 부분 점수.
 export function solvePoints(order) { return Math.max(50, 100 - 2 * order); }
@@ -56,6 +57,27 @@ export const fmtSim = s => (s == null ? "-" : s.toFixed(2));
 export const fmtRank = r => (r === 0 ? "정답" : r == null ? `${RANK_CUTOFF}위 밖` : `${r}위`);
 // 막대 길이 0~1: 순위 기준 (1000위 밖은 0)
 export const heat = r => (r === 0 ? 1 : r == null ? 0 : Math.max(0.04, 1 - Math.log10(r) / 3));
+
+// 순위 막대: 가운데에서 한 덩어리로 차오르다가 두 블럭으로 갈라지며 양옆으로 늘어남.
+// 목록은 2초마다 다시 그려지므로, 처음 보이는 단어만 움직이고 이미 본 단어는 그대로 둠.
+const seenBars = new Set();
+export function bar(r, key) {
+  const h = heat(r);
+  const c = h >= 0.75 ? "var(--dancheong)" : h >= 0.45 ? "var(--gold)" : "#6f95ff";
+  let cls = "bar";
+  if (h === 0) cls += " empty";
+  else if (key != null && !seenBars.has(key)) { seenBars.add(key); cls += " grow"; }
+  return `<span class="${cls}" style="--w:${(h * 100).toFixed(1)}%;--c:${c}"><i class="L"></i><i class="R"></i></span>`;
+}
+
+// 힌트 반짝임: 처음 본 때부터 HINT_FLASH_MS 동안. 다시 그려져도 이어서 반짝이도록 지난 시간만큼 앞당겨 시작.
+const hintSeen = new Map();
+export function hintFlash(h) {
+  const k = `${h.r}:${h.w}`;
+  if (!hintSeen.has(k)) hintSeen.set(k, h.at && Date.now() - h.at > 60_000 ? 0 : Date.now()); // 새로고침 때 오래된 힌트는 반짝이지 않음
+  const el = Date.now() - hintSeen.get(k);
+  return el < HINT_FLASH_MS ? ` flash" style="animation-delay:-${el}ms` : "";
+}
 
 // 점수 → 맞힌 라운드 수 → 맞힌 시간 합계. 셋 다 같아야 공동 등수.
 export function ranked(rows) {

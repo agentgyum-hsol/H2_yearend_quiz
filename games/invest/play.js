@@ -1,13 +1,14 @@
 // 반도체왕 임삼성: 참가자(휴대폰) 화면
 // mount(el, ctx) → unmount 함수. ctx = { db, fs, player: { id, nick } }
-// 라운드: 프리장 20초(뉴스 + 시초 주문) → 본장 30초(갈아탈 때마다 슬라이더 잠김, 15초째 속보로 5초 정지) → 결과
+// 라운드: 뉴스·토의(나만의 비밀 찌라시, 비율 미리 정하기) → (운영자가 고르면) 프리장 20초 시초 주문
+//        → 본장 30초(갈아탈 때마다 슬라이더 잠김, 15초째 속보로 15초 정지·토의) → 결과(찌라시 진위)
 // 가격 흐름은 폰에서 직접 계산(서버 읽기 없음). 비율은 종목별 슬라이더로 정함.
-import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS, MARKET_WALL, FLASH_SECONDS, SLIDER_LOCK_SECONDS, TRADE_COOLDOWN_MS, TOP_N,
-  tickAt, flashLeft, moveOf, pricePath, valueAt,
+import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS, MARKET_WALL, preOf, FLASH_SECONDS, SLIDER_LOCK_SECONDS, TRADE_COOLDOWN_MS, TOP_N,
+  tickAt, flashLeft, moveOf, tipFor, pricePath, valueAt,
   cashOf, sameAlloc, toMs, won, pct, cls, arrow, esc, lineChart, loadCss } from './data.js';
 
 const GAME = 'invest';
-const T = MARKET_SECONDS, PRE = PRE_SECONDS, W = MARKET_WALL;
+const T = MARKET_SECONDS, W = MARKET_WALL;
 const STEP = 5;
 
 export function mount(el, ctx) {
@@ -18,9 +19,10 @@ export function mount(el, ctx) {
   const myRef = fs.doc(db, 'rooms', GAME, 'portfolios', player.id);
   const winRef = fs.doc(db, 'winners', GAME);
   const tradeCol = (run, r) => fs.collection(db, 'rooms', GAME, `trades_${run}_${r}`);
+  const voteRef = (run, r) => fs.doc(db, 'rooms', GAME, `votes_${run}_${r}`, player.id); // 회장님 믿음 투표
   const ts = () => (fs.serverTimestamp ? fs.serverTimestamp() : Date.now());
 
-  let room = null, mine = null, myTrades = [], key = '', unTr = null, winner = null;
+  let room = null, mine = null, myTrades = [], key = '', unTr = null, unVote = null, myVote = null, winner = null;
   let draft = null, offset = 0, lastSent = 0, lockUntil = 0, busy = false, err = '', dragging = false, pending = false, stageKey = '';
 
   el.innerHTML = '';
@@ -47,7 +49,8 @@ export function mount(el, ctx) {
     room = s.exists() ? s.data() : { phase: 'lobby', round: 0, runId: '' };
     const k = room.runId + '_' + room.round;
     if (k !== key) {
-      key = k; draft = null; myTrades = []; unTr && unTr();
+      key = k; draft = null; myTrades = []; unTr && unTr(); unVote && unVote(); myVote = null;
+      unVote = room.runId ? fs.onSnapshot(voteRef(room.runId, room.round), v => { myVote = v.exists() ? v.data().trust : null; render(); }) : null;
       unTr = room.runId ? fs.onSnapshot(fs.query(tradeCol(room.runId, room.round), fs.where('pid', '==', player.id)), q => {
         myTrades = q.docs.map(d => d.data()); render();
       }) : null;
@@ -69,8 +72,9 @@ export function mount(el, ctx) {
   /* ---------- 시간과 자산 ---------- */
   // 프리장 시작 시각(서버 기준) → 본장 시작 = 그 뒤 PRE 초
   const openMs = () => toMs(room?.marketStart) ?? (room?.marketStartMs != null ? room.marketStartMs : null);
-  const startMs = () => { const o = openMs(); return o == null ? null : o + PRE * 1000; };
-  const elapsed = () => { const s = startMs(); return s == null ? -PRE * 1000 : Date.now() + offset - s; }; // 음수면 프리장
+  const pre = () => preOf(room); // 운영자가 프리장을 건너뛰면 0
+  const startMs = () => { const o = openMs(); return o == null ? null : o + pre() * 1000; };
+  const elapsed = () => { const s = startMs(); return s == null ? -pre() * 1000 : Date.now() + offset - s; }; // 음수면 프리장
   const isPre = () => room?.phase === 'market' && elapsed() < 0;
   const tick = () => tickAt(Math.max(0, elapsed()));
   const closed = () => room?.phase === 'market' && elapsed() >= W * 1000;
@@ -154,6 +158,10 @@ export function mount(el, ctx) {
     const { a } = t.dataset;
     if (a === 'send') order(cur());
     else if (a === 'undo') { draft = null; render(true); }
+    else if (a === 'vote') {
+      const trust = t.dataset.v === '1'; myVote = trust; render();
+      fs.setDoc(voteRef(room.runId, room.round), { pid: player.id, nick: player.nick, trust, at: ts() }).catch(() => { err = '투표하지 못했어요. 다시 눌러 주세요.'; render(); });
+    }
     else if (a === 'cash') { if (!lockLeft()) { draft = { ...ZERO }; render(true); } }
   });
 
@@ -172,7 +180,7 @@ export function mount(el, ctx) {
   function controls() {
     const a = cur(), c = cashOf(a), hold = holding(), dirty = draft && !sameAlloc(draft, hold);
     const pre = isPre(), news = room.phase === 'news';
-    const label = news ? '프리장이 열리면 주문할 수 있어요' : pre ? '시초 주문 넣기' : '이 비율로 주문';
+    const label = news ? '장이 열리면 주문할 수 있어요' : pre ? '시초 주문 넣기' : '이 비율로 주문';
     const lk = lockLeft(), dis = lk ? 'disabled' : '';
     return `<div class="sliders${lk ? ' locked' : ''}">
       ${lk ? `<div class="lock" role="status">🔒 거래 수수료: <b class="num" data-live="lock">${Math.ceil(lk / 1000)}초</b> 뒤 다시 조정</div>` : ''}
@@ -224,10 +232,12 @@ export function mount(el, ctx) {
       <div class="card stack" style="gap:8px"><b>규칙</b>
         <ul class="rules">
           <li>모두 <b>${won(START_MONEY)}</b>으로 시작, ${ROUNDS.length}라운드 뒤 자산 1등이 반도체왕</li>
-          <li>라운드가 열리면 바로 <b>${PRE}초 프리장</b>: 뉴스 보고 시초 주문</li>
+          <li>라운드마다 <b>뉴스·토의</b>: 내 폰에만 뜨는 <b>비밀 찌라시</b>는 진짜일 수도, 가짜일 수도! 옆 사람과 맞춰 보세요</li>
+          <li>운영자가 열면 <b>${PRE_SECONDS}초 프리장</b>: 본장 시작 가격으로 시초 주문</li>
           <li><b>${T}초 본장</b>: 슬라이더로 비율을 바꿔 주문</li>
           <li>거래 수수료: 본장에서 주문하면 슬라이더 <b>${SLIDER_LOCK_SECONDS}초 잠김</b></li>
-          <li>본장 중간 <b>추가 속보</b>: 장이 ${FLASH_SECONDS}초 멈추고 그 사이 결정</li>
+          <li>본장 중간 <b>추가 속보</b>: 장이 ${FLASH_SECONDS}초 멈추고 토의 타임. 큰 화면에 모두의 투자 비율 공개</li>
+          <li>임삼성 회장의 조언은 <b>가끔 헛다리</b></li>
           <li>마지막 라운드는 등락 2배 <b>더블 찬스</b></li>
           <li>자산이 같으면 더 빨리 결정한 사람이 승리</li>
         </ul></div></div>`;
@@ -237,9 +247,20 @@ export function mount(el, ctx) {
     return `<div class="stack" style="gap:12px">
       ${r.double ? '<div class="status" style="color:var(--accent)">더블 찬스! 이번 라운드는 등락 2배</div>' : ''}
       <div class="news-s"><div class="num muted" style="font-size:.85rem">${r.when}</div><h2>${r.title}</h2><ul>${r.bullets.map(b => `<li>${b}</li>`).join('')}</ul></div>
-      <ul class="tips"><li>운영자가 이 라운드를 다시 열 때까지 비율을 미리 정해 두세요</li><li>주문하지 않으면 지난 라운드 비율 그대로</li></ul>
+      ${tipBox()}
+      <div class="boss-s stack" style="gap:8px"><div><b>임삼성 회장</b> “${esc(r.boss)}”</div>
+        <div class="row" style="gap:8px;flex-wrap:nowrap">
+          <button class="btn ${myVote === true ? 'primary' : 'ghost'}" style="flex:1" data-a="vote" data-v="1" ${room.runId ? '' : 'disabled'}>👍 믿는다</button>
+          <button class="btn ${myVote === false ? 'primary' : 'ghost'}" style="flex:1" data-a="vote" data-v="0" ${room.runId ? '' : 'disabled'}>🙅 안 믿는다</button></div>
+        <span class="muted" style="font-size:.85rem">${myVote == null ? '큰 화면에 믿는 사람 비율이 떠요' : '투표 완료! 바꿀 수 있어요'}</span></div>
+      <ul class="tips"><li>💬 지금은 토의 시간! 찌라시를 옆 사람과 맞춰 보세요</li><li>비율을 미리 정해 두고, 장이 열리면 주문 버튼만 누르세요</li><li>주문하지 않으면 지난 라운드 비율 그대로</li></ul>
       ${controls()}
     </div>`;
+  }
+  // 나만 아는 비밀 찌라시 (라운드마다 참가자별로 다름, 진짜·가짜 섞임)
+  function tipBox() {
+    const t = tipFor(player.id, room.round);
+    return `<div class="tip"><b class="tag">🤫 나만 아는 찌라시 · 진짜일까?</b>${esc(t.text)}</div>`;
   }
   function vMarket() {
     const r = ROUNDS[room.round];
@@ -249,6 +270,7 @@ export function mount(el, ctx) {
           <div style="flex:1;min-width:0"><div class="eyebrow" style="color:var(--accent)">프리장 · 시초 주문</div><b style="font-size:1rem;line-height:1.3">${r.title}${r.double ? ' <span style="color:var(--accent)">×2</span>' : ''}</b></div>
           <span class="clock num" data-live="clock">${Math.ceil(-elapsed() / 1000)}<span>초</span></span></div>
         <ul class="news-b">${r.bullets.map(b => `<li>${b}</li>`).join('')}</ul>
+        ${tipBox()}
         <ul class="tips"><li>프리장 주문은 본장 시작 가격으로 체결</li><li>본장에선 주문할 때마다 슬라이더 ${SLIDER_LOCK_SECONDS}초 잠김</li></ul>
         ${controls()}
       </div>`;
@@ -256,8 +278,9 @@ export function mount(el, ctx) {
     const tk = tick(), left = T - tk, fl = flash();
     return `<div class="stack" style="gap:10px">
       ${fl ? `<div class="flash" role="alert"><div class="row" style="justify-content:space-between;align-items:center;gap:8px">
-        <span class="flash-tag">추가 속보 · 장 정지</span><b class="num" data-live="flash">${fl}초</b></div>
-        <b style="font-size:1.05rem;line-height:1.35">${r.flash.title}</b><ul>${r.flash.bullets.map(b => `<li>${b}</li>`).join('')}</ul></div>` : ''}
+        <span class="flash-tag">추가 속보 · 토의 타임</span><b class="num" data-live="flash">${fl}초</b></div>
+        <b style="font-size:1.05rem;line-height:1.35">${r.flash.title}</b><ul>${r.flash.bullets.map(b => `<li>${b}</li>`).join('')}</ul>
+        <div class="muted" style="font-size:.9rem">💬 주변과 상의하세요! 큰 화면에 모두의 투자 비율이 떴어요. 지금 주문하면 멈춘 가격으로 체결</div></div>` : ''}
       <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
         <div style="flex:1;min-width:0"><div class="eyebrow">본장 · 이번 라운드 <span data-live="ret"></span></div><b style="font-size:.95rem;line-height:1.3">${r.title}${r.double ? ' <span style="color:var(--accent)">×2</span>' : ''}</b></div>
         <span class="clock num" data-live="clock">${left}<span>초</span></span></div>
@@ -275,6 +298,9 @@ export function mount(el, ctx) {
       <div class="card" style="padding:10px;color:var(--muted)">${lineChart(INVEST.map(a => ({ color: a.color, data: pricePath(room.round, a.id) })), T + 1, T, { h: 120 })}</div>
       <div class="mv">${ASSETS.map(x => `<div><span class="row" style="gap:6px"><span class="dot" style="background:${x.color}"></span>${x.short}</span><b class="num ${cls(m[x.id])}">${arrow(m[x.id])} ${pct(Math.abs(m[x.id]), false)}</b></div>`).join('')}</div>
       ${settled ? `<p class="muted" style="font-size:.9rem">주문 ${mine.trades || 0}번 · 마감 때 비율: ${allocText(mine.lastAlloc || ZERO)}</p>` : ''}
+      ${(() => { const t = tipFor(player.id, room.round); return `<div class="tip"><b class="tag">내 찌라시는… ${t.real ? '진짜였어요!' : '가짜였어요!'}</b>${esc(t.text)}</div>`; })()}
+      <div class="boss-s"><b>임삼성 회장</b> ${r.bossWrong ? '🙈 헛다리!' : '🎯 적중!'} <span class="muted">“${esc(r.boss)}”</span>
+        ${myVote == null ? '' : `<br><b>${myVote !== !!r.bossWrong ? '내 판단 적중 👏' : '내 판단은 빗나감 😅'}</b>`}</div>
       <p class="muted" style="font-size:.95rem">${r.twist}</p>
     </div>`;
   }
@@ -288,6 +314,6 @@ export function mount(el, ctx) {
 
   return function unmount() {
     clearInterval(liveTimer); document.removeEventListener('visibilitychange', onVis);
-    unRoom(); unMine(); unWin(); unTr && unTr(); el.innerHTML = '';
+    unRoom(); unMine(); unWin(); unTr && unTr(); unVote && unVote(); el.innerHTML = '';
   };
 }

@@ -45,14 +45,15 @@ export function mount(el, { db, fs, player }) {
     if (room.phase === "lobby") {
       root.innerHTML = `<div class="ep-result">
         <div class="emoji" style="font-size:3rem" aria-hidden="true">🐋⚔️🐋 🦐💥</div>
-        <p class="ep-big">제 이모지야👽</p>
+        <p class="ep-big">이게 제 이모지야👽</p>
         <ul class="rules">
           <li>화면에 나오는 이모지를 보고 정답을 써서 내세요</li>
           <li>속담, 사자성어, 영화·드라마 제목, 직장인 말이 섞여 나와요</li>
           <li>빨리 맞힐수록 점수가 높아요</li>
           <li>어려움 문제는 점수 2배</li>
         </ul>
-        <p class="muted">곧 시작합니다</p></div>`;
+        <p class="muted">곧 시작합니다</p>
+        <p class="muted" style="font-size:.85rem;margin:0">큰 화면은 넘어갔는데 이 화면이 그대로면 화면을 한 번 톡 눌러 주세요</p></div>`;
     }
 
     else if (room.phase === "question") {

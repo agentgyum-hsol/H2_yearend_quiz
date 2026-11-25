@@ -80,5 +80,8 @@ export function loadEngine() {
 }
 
 // 정답 추천 (미리보기로 가까운 단어가 자연스러운 것만 골랐음)
-export const SUGGEST = ["선물", "회식", "연말", "커피", "월급", "케이크", "출근", "사랑", "달력", "치킨",
+export const SUGGEST = ["파스타", "치즈", "셰프", "레스토랑", "선물", "회식", "연말", "커피", "월급", "케이크", "출근", "사랑", "달력", "치킨",
   "소주", "붕어빵", "비행기", "주식", "로또", "생일", "우산", "바다", "반도체", "겨울", "산타", "다이어트"];
+
+// 2026 송년회(오 리틀 이태리) 라운드 정답, AG 확정 2026-11-25. 소스를 훑어봐도 바로 보이지 않게 base64로만 감쌈.
+export const PARTY_ANSWERS = () => new TextDecoder().decode(Uint8Array.from(atob("7J207YOc66asLOyZgOyduCzshqHrhYTtmow="), c => c.charCodeAt(0))).split(",");
