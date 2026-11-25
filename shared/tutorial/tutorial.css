@@ -53,6 +53,9 @@
 .tu-rank li { display: grid; grid-template-columns: 3em 1fr auto; gap: 10px; text-align: left; }
 .tu-rank li:first-child { color: var(--gold); }
 
+.tu-count { display: flex; align-items: baseline; gap: 8px; }
+.tu-count b { font-family: var(--display); font-weight: 400; color: var(--gold); font-size: clamp(3rem, 8vw, 6rem); line-height: 1; }
+
 /* 휴대폰 */
 body.tu-open { overflow: hidden; }
 .tu-phone { position: fixed; inset: 0; z-index: 30; background: var(--night); overflow: auto; display: flex; flex-direction: column; gap: 14px;

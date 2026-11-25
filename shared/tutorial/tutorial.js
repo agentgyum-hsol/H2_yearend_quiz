@@ -33,7 +33,13 @@ export function mountTutorialHost({ db, fs }) {
   ov.className = "tu-host"; ov.hidden = true; ov.setAttribute("aria-live", "polite");
   document.body.appendChild(ov);
 
-  let st = null, tut = null, docs = [], pUnsub = null, pRun = null, busy = false;
+  let st = null, tut = null, docs = [], pUnsub = null, pRun = null, busy = false, players = [];
+  const t = v => (v?.toMillis ? v.toMillis() : typeof v === "number" ? v : Infinity);
+  // 마지막 대기실 쪽에 보일 참가자 명단
+  const plUnsub = fs.onSnapshot(fs.collection(db, "players"), s => {
+    players = s.docs.map(d => ({ id: d.id, nick: d.data().nick, at: d.data().joinedAt })).sort((a, b) => t(a.at) - t(b.at));
+    if (tut?.steps[st?.step]?.waiting) render();
+  });
   const loaded = new Map();
   const get = id => { if (!loaded.has(id)) loaded.set(id, loadTutorial(id)); return loaded.get(id); };
 
@@ -60,11 +66,11 @@ export function mountTutorialHost({ db, fs }) {
     ov.innerHTML = `
       <header class="tu-top"><span class="tu-game"><span class="emoji" aria-hidden="true">${tut.emoji}</span> ${esc(tut.title)} 설명</span>
         <span class="tu-dots" aria-label="${i + 1}/${n}단계">${tut.steps.map((_, k) => `<i class="${k === i ? "on" : k < i ? "done" : ""}"></i>`).join("")}</span></header>
-      <div class="tu-body"><h2>${esc(step.title)}</h2><div class="tu-main">${step.big({ docs })}</div></div>
+      <div class="tu-body"><h2>${esc(step.title)}</h2><div class="tu-main">${step.big({ docs, players })}</div></div>
       <footer class="tu-ctl">
         <button class="btn" data-go="-1" ${i === 0 ? "disabled" : ""}>← 이전</button>
         <span class="muted mono">${i + 1} / ${n}</span>
-        ${i < n - 1 ? `<button class="btn primary" data-go="1">다음 <kbd>→</kbd></button>` : `<button class="btn primary" data-close>설명 끝내기 <kbd>Enter</kbd></button>`}
+        ${i < n - 1 ? `<button class="btn primary" data-go="1">다음 <kbd>→</kbd></button>` : `<button class="btn primary" data-close>게임 시작 화면으로 <kbd>Enter</kbd></button>`}
         <button class="btn" data-close>닫기 <kbd>Esc</kbd></button>
       </footer>`;
     ov.querySelectorAll("[data-go]").forEach(b => b.onclick = () => go(+b.dataset.go));
@@ -94,10 +100,11 @@ export function mountTutorialHost({ db, fs }) {
   return {
     async open(gameId) {
       await clearPractice(db, fs).catch(e => console.warn("tutorial clear", e));
+      ov.hidden = true; // 새 설명이 뜨기 전 예전 화면이 잠깐 보이지 않게
       await fs.setDoc(ref, { on: true, gameId, step: 0, run: Date.now() });
     },
     close,
-    unmount() { unsub(); pUnsub && pUnsub(); removeEventListener("keydown", onKey, true); ov.remove(); },
+    unmount() { unsub(); plUnsub(); pUnsub && pUnsub(); removeEventListener("keydown", onKey, true); ov.remove(); },
   };
 }
 
