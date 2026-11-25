@@ -6,7 +6,7 @@
 const SUBS = {
   similar: ["guesses", "feedback", "feed", "rounds", "board"],
   emoji: ["answers", "results", "scores", "board"],
-  invest: ["portfolios"],   // + trades_{runId}_{라운드} (아래에서 따로)
+  invest: ["portfolios"],   // + trades_/votes_{runId}_{라운드} (아래에서 따로)
 };
 
 async function wipeDocs(db, fs, docs) {
@@ -25,7 +25,7 @@ export async function resetGame(db, fs, gameId) {
   if (gameId === "invest") {
     const room = await fs.getDoc(fs.doc(db, "rooms", "invest"));
     const run = room.exists() ? room.data().runId : null;
-    if (run) for (let r = 0; r <= 10; r++) refs.push(...await refsOf(db, fs, "rooms", "invest", `trades_${run}_${r}`));
+    if (run) for (let r = 0; r <= 10; r++) for (const k of ["trades", "votes"]) refs.push(...await refsOf(db, fs, "rooms", "invest", `${k}_${run}_${r}`));
   }
   refs.push(fs.doc(db, "rooms", gameId), fs.doc(db, "winners", gameId));
   await wipeDocs(db, fs, refs);
