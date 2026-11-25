@@ -34,16 +34,17 @@
 .inv .warn{color:var(--up);font-weight:700}
 
 /* ---------- 운영자 ---------- */
-.inv-host{display:flex;flex-direction:column}
-.inv-host .wrap{width:100%;max-width:1240px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.inv-host{display:flex;flex-direction:column;flex:1;min-height:0;height:100%}
+.inv-host .wrap{width:100%;max-width:1600px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .inv-host .ticker{background:var(--panel);border-bottom:1px solid var(--line)}
 .inv-host .ticker .wrap{display:flex;gap:18px;align-items:center;padding-block:10px;flex-wrap:wrap}
 .inv-host .brand{font-family:var(--f-display);font-size:1.35rem;color:var(--accent);margin-right:auto}
 .inv-host .tick{display:flex;gap:6px;align-items:baseline;font-size:.9rem}
-.inv-host main{flex:1;padding-block:28px 120px}
+.inv-host main{flex:1;min-height:0;padding-block:14px;overflow:auto}
+.inv-host main>.wrap{height:100%}
 .inv-host h1{font-size:clamp(2.6rem,7vw,5rem);line-height:1.05}
 .inv-host h2{font-size:clamp(1.8rem,4.2vw,3rem);line-height:1.15}
-.inv-host .bar{position:fixed;left:0;right:0;bottom:0;background:rgba(11,18,38,.95);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);z-index:5}
+.inv-host .bar{flex:none;background:rgba(11,18,38,.95);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);z-index:5}
 .inv-host .bar .wrap{display:flex;gap:12px;align-items:center;padding-block:12px;flex-wrap:wrap}
 .inv-host .steps{display:flex;gap:6px;margin-right:auto;flex-wrap:wrap;align-items:center}
 .inv-host .step{font-size:.8rem;padding:4px 10px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
@@ -58,9 +59,9 @@
 .inv-host .asset-li{display:grid;grid-template-columns:44px 1fr;gap:12px;align-items:center}
 .inv-host .asset-ic{width:44px;height:36px;border-radius:9px;display:grid;place-items:center;font-family:var(--f-num);font-weight:700;font-size:.72rem;color:#0b1226}
 
-.inv-host .news{border-left:6px solid var(--accent);background:var(--panel);border-radius:0 14px 14px 0;padding:28px 32px}
+.inv-host .news{border-left:6px solid var(--accent);background:var(--panel);border-radius:0 14px 14px 0;padding:clamp(14px,2.4vh,28px) 28px}
 .inv-host .news .when{font-family:var(--f-num);color:var(--accent);margin-bottom:10px}
-.inv-host .news ul{margin:16px 0 0;padding-left:1.2em;font-size:1.25rem;display:grid;gap:6px}
+.inv-host .news ul{margin:10px 0 0;padding-left:1.2em;font-size:1.25rem;display:grid;gap:6px}
 .inv-host .boss{display:flex;gap:16px;align-items:flex-start}
 .inv-host .face{flex:none;width:64px;height:64px;border-radius:50%;background:var(--accent);color:#1a1300;display:grid;place-items:center;font-family:var(--f-display);font-size:1.6rem}
 .inv-host .bubble{background:var(--panel2);border-radius:4px 14px 14px 14px;padding:14px 18px;font-size:1.1rem}
@@ -72,10 +73,10 @@
 
 .inv-host .moves{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
 @media (max-width:860px){.inv-host .moves{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.inv-host .move{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:6px;opacity:.3;transition:opacity .4s,transform .4s;transform:translateY(6px)}
+.inv-host .move{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 14px;display:flex;flex-direction:column;gap:6px;opacity:.3;transition:opacity .4s,transform .4s;transform:translateY(6px)}
 .inv-host .move.shown{opacity:1;transform:none}
 .inv-host .move .pct{font-family:var(--f-num);font-size:clamp(1.6rem,3.6vw,2.4rem);font-weight:700;line-height:1.1}
-.inv-host .move svg{width:100%;height:44px}
+.inv-host .move svg{width:100%;height:34px!important}
 .inv-host .twist{background:rgba(255,77,94,.1);border:1px solid rgba(255,77,94,.45);border-radius:12px;padding:14px 18px;font-size:1.1rem}
 
 .inv-host .board{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px}
@@ -185,8 +186,65 @@
 .inv .boss-s{font-size:.92rem;line-height:1.4;background:var(--panel);border-radius:12px;padding:10px 12px}
 /* 회장님 믿음 투표 · 인터뷰 카드(운영자) */
 .inv .vote-bar{display:flex;height:48px;border-radius:12px;overflow:hidden;font-weight:800;font-size:1.1rem}
-.inv .vote-bar span{display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;padding:0 10px;transition:flex .6s ease;min-width:0}
+.inv .vote-bar span{min-width:9.5em;display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;padding:0 10px;transition:flex .6s ease}
 .inv .vote-bar .y{background:var(--up);color:#fff} .inv .vote-bar .n{background:var(--down);color:#fff}
 .inv .ivs{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .inv .iv{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:4px}
 .inv .iv-nm{font-family:var(--f-display);font-size:clamp(1.8rem,4vw,2.8rem);line-height:1.1;overflow-wrap:anywhere}
+
+/* ---------- 라운드 화면: 왼쪽 내용 + 오른쪽 순위, 스크롤 없이 한 화면 ---------- */
+.inv-host .rd{display:grid;grid-template-columns:minmax(0,1fr) clamp(260px,22vw,340px);gap:18px;height:100%;min-height:0}
+.inv-host .rd-main{display:flex;flex-direction:column;gap:clamp(10px,1.6vh,18px);min-height:0;min-width:0;position:relative}
+.inv-host .side{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:hidden;padding:14px}
+.inv-host .side-board{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;min-height:0}
+.inv-host .side-board li{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:8px;align-items:center;background:var(--panel2);border:1px solid transparent;border-radius:9px;padding:5px 10px;line-height:1.25}
+.inv-host .side-board li.top{border-color:var(--accent)}
+.inv-host .side-board .rk{font-family:var(--f-display);font-size:1.2rem;color:var(--muted)}
+.inv-host .side-board li.top .rk{color:var(--accent)}
+.inv-host .side-board .nm{font-weight:700;font-size:1.05rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.inv-host .side-board .vv{text-align:right;font-size:.8rem}
+.inv-host .boss-h{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.inv-host .boss-tag{font-size:.78rem;font-weight:700;color:#1a1300;background:var(--accent);border-radius:99px;padding:1px 9px}
+.inv-host .talk{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;font-size:1.2rem;padding:14px 18px}
+.inv-host .talk .muted{font-size:.95rem}
+.inv-host .pre-grid{display:grid;grid-template-columns:minmax(200px,.6fr) minmax(0,2fr);gap:16px}
+.inv-host .chart-card{display:flex;flex-direction:column;gap:10px;flex:1;min-height:120px}
+.inv-host .chart-fill{flex:1;min-height:0;color:var(--muted)}
+.inv-host .chart-fill svg{height:100%!important}
+.inv-host .market .clock,.inv-host .chart-card .clock{font-size:clamp(2.4rem,6vh,4.4rem);line-height:1}
+.inv-host .flash{gap:6px;padding:14px 22px}
+.inv-host .flash h2{font-size:clamp(1.4rem,2.8vw,2.2rem)}
+.inv-host .flash ul{font-size:1.1rem}
+.inv-host .rv-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:start}
+.inv-host .rv-grid .twist{font-size:1rem;padding:12px 16px}
+.inv-host .iv{padding:12px 14px}
+.inv-host .iv-nm{font-size:clamp(1.5rem,3vw,2.3rem)}
+.inv-host .countdown{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:rgba(11,18,38,.82);border-radius:16px;z-index:3}
+.inv-host .countdown .eyebrow{font-size:1.4rem;color:var(--accent)}
+.inv-host .cd-num{font-family:var(--f-display);font-size:min(46vh,22rem);line-height:1;color:var(--up);animation:inv-pop 1s ease-out infinite}
+@keyframes inv-pop{0%{transform:scale(1.15);opacity:.6}30%{transform:scale(1);opacity:1}}
+@media (prefers-reduced-motion:reduce){.inv-host .cd-num{animation:none}}
+@media (max-width:900px){.inv-host .rd{grid-template-columns:1fr;height:auto}.inv-host .pre-grid,.inv-host .rv-grid{grid-template-columns:1fr}.inv-host main>.wrap{height:auto}}
+/* 폰: 회장 소개, 본장 직전 카운트다운, 자동 주문 대기 */
+.inv-play .boss-tag{font-size:.72rem;font-weight:700;color:#1a1300;background:var(--accent);border-radius:99px;padding:1px 8px;white-space:nowrap}
+.inv-play .p-cd{text-align:center;font-weight:700;color:var(--up);background:rgba(255,77,94,.12);border:2px solid var(--up);border-radius:14px;padding:6px 10px;font-size:1.1rem}
+.inv-play .p-cd b{display:block;font-family:var(--f-display);font-weight:400;font-size:4.5rem;line-height:1}
+.inv-play .btn.auto{box-shadow:0 0 0 3px rgba(255,196,61,.35);animation:inv-auto 1s ease-in-out infinite}
+@keyframes inv-auto{50%{box-shadow:0 0 0 6px rgba(255,196,61,.15)}}
+@media (prefers-reduced-motion:reduce){.inv-play .btn.auto{animation:none}}
+@media (max-height:820px){.inv-host .flash ul,.inv-host .flash>.muted{display:none}.inv-host .chart-card{min-height:150px}.inv-host .news ul{font-size:1.05rem}.inv-host .move .pct{font-size:1.5rem}}
+@media (max-height:820px){
+  .inv-host .news h2{font-size:clamp(1.4rem,2.6vw,2.1rem)}
+  .inv-host .news{padding:12px 22px}
+  .inv-host .vote-bar{height:38px;font-size:1rem}
+  .inv-host .talk{padding:10px 16px;font-size:1.05rem}
+  .inv-host .face{width:48px;height:48px;font-size:1.2rem}
+  .inv-host .bubble{padding:10px 14px;font-size:1rem}
+  .inv-host .move svg{display:none!important}
+  .inv-host .iv{padding:8px 12px;gap:0}
+  .inv-host .iv-nm{font-size:1.5rem}
+  .inv-host .rv-grid .card{padding:10px 14px}
+  .inv-host .rv-grid .card .row{font-size:.9rem!important;line-height:1.35}
+  .inv-host .pre-grid .clock{font-size:4rem!important}
+  .inv-host .pre-grid .card{padding:12px 16px}
+}

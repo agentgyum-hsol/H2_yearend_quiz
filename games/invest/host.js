@@ -1,8 +1,8 @@
 // 반도체왕 임삼성: 운영자(프로젝터) 화면
 // mount(el, ctx) → unmount 함수. ctx = { db, fs, gameId, joinUrl? }
 // 진행: 로비 → (라운드마다) 뉴스·토의(찌라시, 군중 포지션) → [운영자 선택: 프리장 20초 시초 주문 | 바로 본장]
-//       → 본장 30초(15초째 속보로 15초 정지·토의) → 자동 마감·결과(임삼성 조언 적중/헛다리, 찌라시 진위) → … → 최종(TOP 5, 우승 확정)
-import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS, MARKET_WALL, preOf, FLASH_SECONDS, SLIDER_LOCK_SECONDS, TOP_N, tickAt, flashLeft, cashOf, moveOf, pricePath, valueAt, indexSeries,
+//       → (모두 시초 주문하면 5초 카운트다운) → 본장 30초(15초째 속보로 30초 정지·토의) → 자동 마감·결과(임삼성 조언 적중/헛다리, 찌라시 진위) → … → 최종(TOP 5, 우승 확정)
+import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS, MARKET_WALL, preOf, FLASH_SECONDS, SLIDER_LOCK_SECONDS, TOP_N, BOSS_TAG, ALL_IN_SECONDS, tickAt, flashLeft, cashOf, moveOf, pricePath, valueAt, indexSeries,
   toMs, won, pct, cls, arrow, esc, rankList, lineChart, loadCss } from './data.js';
 import { watchWinners, pickWinner, otherGameTitle, confirmWinner, clearWinner } from '../../shared/winners.js';
 
@@ -58,9 +58,19 @@ export function mount(el, ctx) {
   const tickTimer = setInterval(() => {
     if (room?.phase !== 'market') return;
     if (elapsedMs() >= (W + 2.5) * 1000 && ui.settling !== tradeKey) settle();
+    allIn();
     render();
   }, 1000);
 
+  // 프리장에서 모두 시초 주문을 내면 ALL_IN_SECONDS 초 뒤 본장 시작 (프리장 길이 preSec 을 줄임 → 폰도 같이 따라옴)
+  function allIn() {
+    if (!isPre() || ui.allIn === tradeKey || !room.marketStartMs) return;
+    const n = Object.keys(ports).length, ordered = new Set(trades.map(t => t.pid)).size;
+    if (!n || ordered < n || -elapsedMs() <= (ALL_IN_SECONDS + 0.5) * 1000) return;
+    ui.allIn = tradeKey;
+    const preSec = Math.ceil((Date.now() - room.marketStartMs) / 1000) + ALL_IN_SECONDS;
+    fs.updateDoc(roomRef, { preSec }).catch(() => { ui.allIn = ''; });
+  }
   function showErr(e) { ui.err = '서버 연결에 문제가 있어요: ' + (e?.message || e); render(); }
   // 본장 시작 기준 경과 시간(운영자 시계). 음수면 프리장
   const pre = () => preOf(room);
@@ -275,11 +285,11 @@ export function mount(el, ctx) {
         <h1>반도체왕 <span style="color:var(--accent)">임삼성</span></h1>
         <ul class="rules" style="font-size:1.15rem">
           <li>모두 <b>${won(START_MONEY)}</b>으로 시작, ${ROUNDS.length}라운드 뒤 자산 1등이 올해의 반도체왕</li>
-          <li>라운드마다 <b>뉴스·토의</b>: 내 폰의 <b>비밀 찌라시</b>는 진짜일 수도, 가짜일 수도! 옆 사람과 맞춰 보세요</li>
+          <li>라운드마다 <b>뉴스·토의</b>: 폰마다 <b>다른 비밀 찌라시</b>가 와요. 진짜일 수도, 가짜일 수도! 옆 사람과 맞춰 보세요</li>
           <li>운영자가 고르면 <b>${PRE}초 프리장</b>: 본장 시작 가격으로 시초 주문</li>
           <li><b>${T}초 본장</b>: 차트를 보며 슬라이더로 비율 변경</li>
           <li>본장 중간 <b>추가 속보</b>: 장이 ${FLASH_SECONDS}초 멈추고 토의 타임. 이때만 <b>모두의 투자 비율</b> 공개</li>
-          <li>임삼성 회장의 조언은 <b>가끔 헛다리</b>. 믿을지 말지는 여러분 몫</li>
+          <li>${BOSS_TAG}, <b>임삼성 회장</b>의 한마디도 뉴스와 함께 나와요</li>
           <li>거래 수수료: 본장에서 주문하면 슬라이더가 <b>${SLIDER_LOCK_SECONDS}초 잠김</b></li>
           <li>마지막 라운드는 등락 2배 <b>더블 찬스</b></li>
         </ul>
@@ -299,52 +309,64 @@ export function mount(el, ctx) {
     return `<div class="twist" style="border-color:var(--accent);background:rgba(255,196,61,.12);font-size:1.3rem"><b style="color:var(--accent)">더블 찬스!</b> 이번 라운드는 DRAM, NAND, 금, 비트코인이 평소의 2배로 움직입니다.</div>`;
   }
 
+  // 오른쪽 순위판: 한 줄짜리 행으로 TOP 10. mode: total(누적) | round(이번 라운드 실시간) | reveal(정산 직후, 순위 변동 표시)
   function board(rows, limit, mode) {
-    return `<div class="board">${rows.slice(0, limit).map((p, k) => {
+    return `<ol class="side-board">${rows.slice(0, limit).map((p, k) => {
       const d = mode === 'reveal' && p.prevRank ? p.prevRank - (k + 1) : 0;
-      const sub = mode === 'total' ? pct((p.value / START_MONEY - 1) * 100) : pct(p.roundRet || 0);
-      const subCls = mode === 'total' ? cls(p.value - START_MONEY) : cls(p.roundRet || 0);
-      return `<div class="brow ${k < 3 ? 'top' : ''}"><span class="rk">${k + 1}</span>
-        <span class="nm">${esc(p.nick)} ${d ? `<span class="num ${cls(d)}" style="font-size:.8rem">${arrow(d)}${Math.abs(d)}</span>` : ''}</span>
-        <span class="vv num">${won(p.value)}<br><span class="${subCls}">${sub}</span></span></div>`;
-    }).join('')}</div>`;
+      const sub = mode === 'total' ? (p.value / START_MONEY - 1) * 100 : (p.roundRet || 0);
+      return `<li class="${k < 3 ? 'top' : ''}"><span class="rk">${k + 1}</span>
+        <span class="nm">${esc(p.nick)}${d ? ` <span class="num ${cls(d)}" style="font-size:.75rem">${arrow(d)}${Math.abs(d)}</span>` : ''}</span>
+        <span class="vv num">${won(p.value)}<br><span class="${cls(sub)}">${pct(sub)}</span></span></li>`;
+    }).join('')}</ol>`;
   }
+  function side(title, rows, mode) {
+    const n = Object.keys(ports).length;
+    return `<aside class="side card"><div class="row" style="justify-content:space-between"><div class="eyebrow" style="color:var(--accent)">${title}</div><span class="muted" style="font-size:.85rem">${n}명</span></div>
+      ${rows.length ? board(rows, 10, mode) : '<p class="muted">아직 순위가 없어요.</p>'}</aside>`;
+  }
+  // 라운드 화면 공통 틀: 왼쪽 내용 + 오른쪽 순위 (스크롤 없이 한 화면)
+  const layout = (main, aside) => `<div class="rd"><div class="rd-main">${main}</div>${aside}</div>`;
+  const totalSide = () => side(room.round > 0 ? '누적 순위 TOP 10' : '순위', room.round > 0 ? rankList(ports) : [], 'total');
+
+  const bossHtml = (r, extra = '') => `<div class="boss"><div class="face" aria-hidden="true">임</div><div class="bubble">
+    <div class="boss-h"><b>임삼성 회장</b><span class="boss-tag">${BOSS_TAG}</span></div>“${esc(r.boss)}”${extra}</div></div>`;
 
   function vNews() { // 라운드 시작: 뉴스를 띄워 두고 토의. 운영자가 프리장 또는 바로 본장을 엶
     const r = ROUNDS[room.round];
-    return `<div class="stack" style="gap:24px">
+    return layout(`
       <div class="eyebrow">라운드 ${room.round + 1} / ${ROUNDS.length} · 뉴스 · 토의 시간</div>
       ${r.double ? doubleBanner() : ''}
       <article class="news"><div class="when">${r.when}</div><h2>${r.title}</h2><ul>${r.bullets.map(b => `<li>${b}</li>`).join('')}</ul></article>
-      <div class="boss"><div class="face" aria-hidden="true">임</div><div class="bubble"><b>임삼성 회장</b><br>${r.boss}</div></div>
+      ${bossHtml(r)}
       ${votePanel(r, false)}
-      <div class="card row" style="justify-content:space-between"><b style="font-size:1.3rem">💬 작전 회의! 폰의 비밀 찌라시를 옆 사람과 맞춰 보세요. 회장님 말, 믿을까요?</b><span class="muted">폰에서 비율을 미리 정해 둘 수 있어요.</span></div>
-      ${room.round > 0 ? `<div class="stack" style="gap:10px"><div class="eyebrow">현재 TOP 10</div>${board(rankList(ports), 10, 'total')}</div>` : ''}
-    </div>`;
+      <div class="card talk"><b>💬 작전 회의! 폰마다 <span style="color:var(--accent)">다른</span> 비밀 찌라시를 옆 사람과 맞춰 보세요.</b><span class="muted">폰에서 비율을 미리 정해 둘 수 있어요.</span></div>`, totalSide());
   }
 
   function vPre() {
     const r = ROUNDS[room.round], left = Math.ceil(-elapsedMs() / 1000);
     const ordered = new Set(trades.map(t => t.pid)).size, n = Object.keys(ports).length, p = n ? Math.round(ordered / n * 100) : 0;
-    return `<div class="stack" style="gap:24px">
+    const all = n > 0 && ordered >= n;
+    return layout(`
       <div class="eyebrow">라운드 ${room.round + 1} / ${ROUNDS.length} · 프리장${r.double ? ' · 더블 찬스 ×2' : ''}</div>
       ${r.double ? doubleBanner() : ''}
-      <div class="row" style="gap:24px;align-items:stretch">
-        <div class="card stack" style="gap:6px;align-items:center;justify-content:center;min-width:220px">
+      <div class="pre-grid">
+        <div class="card stack" style="gap:6px;align-items:center;justify-content:center">
           <div class="eyebrow" style="color:var(--accent)">본장까지</div>
-          <div class="clock num" style="font-size:clamp(4rem,10vw,7rem);color:${left <= 5 ? 'var(--up)' : 'var(--accent)'}">${left}<span>초</span></div>
+          <div class="clock num" style="font-size:clamp(4rem,9vw,7rem);color:${left <= 5 ? 'var(--up)' : 'var(--accent)'}">${left}<span>초</span></div>
         </div>
-        <div class="card stack" style="gap:14px;flex:1;min-width:260px;justify-content:center">
-          <div class="muted num">${r.when} · 속보</div>
-          <h2 style="font-size:clamp(1.4rem,3vw,2.2rem)">${r.title}</h2>
+        <div class="card stack" style="gap:12px;min-width:0;justify-content:center">
+          <div class="muted num">${r.when}</div>
+          <h2 style="font-size:clamp(1.4rem,2.6vw,2.1rem)">${r.title}</h2>
           <ul class="news-ul">${r.bullets.map(b => `<li>${b}</li>`).join('')}</ul>
-          <div class="boss"><div class="face" aria-hidden="true">임</div><div class="bubble"><b>임삼성 회장</b><br>${r.boss}</div></div>
-          <div class="row" style="justify-content:space-between"><b style="font-size:1.3rem">시초 주문 <span class="num" style="color:var(--accent)">${ordered}</span> / ${n}명</b><span class="muted">본장 시작 가격으로 체결 · 안 내면 지난 비율 그대로</span></div>
-          <div class="meter"><span style="width:${p}%"></span></div>
         </div>
       </div>
-      ${room.round > 0 ? `<div class="stack" style="gap:10px"><div class="eyebrow">현재 TOP 10</div>${board(rankList(ports), 10, 'total')}</div>` : ''}
-    </div>`;
+      ${bossHtml(r)}
+      <div class="card stack" style="gap:10px">
+        <div class="row" style="justify-content:space-between"><b style="font-size:1.3rem">시초 주문 <span class="num" style="color:var(--accent)">${ordered}</span> / ${n}명</b><span class="muted">${all ? '모두 주문 완료! 곧 본장 시작' : `모두 내면 ${ALL_IN_SECONDS}초 뒤 바로 본장 · 안 내면 지난 비율 그대로`}</span></div>
+        <div class="meter"><span style="width:${p}%"></span></div>
+      </div>
+      ${left <= ALL_IN_SECONDS ? `<div class="countdown" aria-live="assertive"><div class="eyebrow">${all ? '시초 주문 완료! ' : ''}본장 시작까지</div><div class="cd-num num">${left}</div></div>` : ''}`,
+      totalSide());
   }
 
   function vMarket() {
@@ -352,7 +374,7 @@ export function mount(el, ctx) {
     const r = ROUNDS[room.round], tick = curTick(), left = T - tick, fl = flashNow();
     const series = INVEST.map(a => ({ color: a.color, data: pricePath(room.round, a.id), w: 3.5 }));
     const live = rankList(liveValues(tick));
-    return `<div class="stack" style="gap:20px">
+    return layout(`
       <div class="row" style="justify-content:space-between">
         <div class="eyebrow">라운드 ${room.round + 1} · 실시간 장${r.double ? ' · 더블 찬스 ×2' : ''}</div>
         <span class="muted">주문 ${trades.length}건</span>
@@ -360,36 +382,33 @@ export function mount(el, ctx) {
       ${fl ? `<div class="flash" role="alert"><div class="row" style="justify-content:space-between;align-items:center">
           <span class="flash-tag">추가 속보 · 장 정지 · 토의 타임</span><span class="clock num">${fl}<span>초</span></span></div>
         <h2>${r.flash.title}</h2><ul>${r.flash.bullets.map(b => `<li>${b}</li>`).join('')}</ul>
-        <div class="muted" style="font-size:1.15rem">💬 주변과 상의하세요! 지금 주문하면 멈춘 가격으로 체결, ${fl}초 뒤 장 재개</div>
+        <div class="muted" style="font-size:1.1rem">💬 주변과 상의하세요! 지금 주문하면 멈춘 가격으로 체결, ${fl}초 뒤 장 재개</div>
         ${crowdPanel()}</div>` : ''}
-      <div class="market">
-        <div class="card stack" style="gap:12px;min-width:0">
-          <div class="row" style="justify-content:space-between;align-items:flex-end">
-            <h2 style="font-size:clamp(1.3rem,2.6vw,1.9rem)">${r.title}</h2>
-            <div class="clock num" style="color:${left <= 5 ? 'var(--up)' : 'var(--accent)'}">${left}<span>초</span></div>
-          </div>
-          <div style="color:var(--muted)">${lineChart(series, T + 1, tick, { h: 300 })}</div>
-          <div class="row" style="gap:18px">${INVEST.map(a => { const c = (pricePath(room.round, a.id)[tick] - 1) * 100; return `<span class="row" style="gap:6px;font-size:1.15rem"><span class="dot" style="background:${a.color}"></span><b>${a.short}</b><span class="num ${cls(c)}">${arrow(c)} ${pct(Math.abs(c), false)}</span></span>`; }).join('')}</div>
+      <div class="card chart-card">
+        <div class="row" style="justify-content:space-between;align-items:flex-end;flex-wrap:nowrap">
+          <h2 style="font-size:clamp(1.2rem,2.2vw,1.7rem)">${r.title}</h2>
+          <div class="clock num" style="color:${left <= 5 ? 'var(--up)' : 'var(--accent)'}">${left}<span>초</span></div>
         </div>
-        <div class="stack" style="gap:10px;min-width:0"><div class="eyebrow">실시간 TOP 10 · 이번 라운드</div>${board(live, 10, 'round')}</div>
-      </div>
-    </div>`;
+        <div class="chart-fill">${lineChart(series, T + 1, tick, { h: 300 })}</div>
+        <div class="row" style="gap:18px">${INVEST.map(a => { const c = (pricePath(room.round, a.id)[tick] - 1) * 100; return `<span class="row" style="gap:6px;font-size:1.1rem"><span class="dot" style="background:${a.color}"></span><b>${a.short}</b><span class="num ${cls(c)}">${arrow(c)} ${pct(Math.abs(c), false)}</span></span>`; }).join('')}</div>
+      </div>`, side('실시간 순위 · 이번 라운드', live, 'round'));
   }
 
   function vReveal() {
     const r = ROUNDS[room.round], m = moveOf(room.round), done = ui.revealed > ASSETS.length;
     const cards = ASSETS.map((a, k) => {
       const on = k < ui.revealed;
-      const sp = a.id === 'cash' ? '' : `<div style="color:var(--muted)">${lineChart([{ color: a.color, data: pricePath(room.round, a.id) }], T + 1, on ? T : 0, { h: 60 })}</div>`;
+      const sp = a.id === 'cash' ? '' : `<div style="color:var(--muted)">${lineChart([{ color: a.color, data: pricePath(room.round, a.id) }], T + 1, on ? T : 0, { h: 40 })}</div>`;
       return `<div class="move ${on ? 'shown' : ''}"><div class="row" style="gap:8px;font-weight:700"><span class="dot" style="background:${a.color}"></span>${a.name}</div>
         <div class="pct ${on ? cls(m[a.id]) : 'flat'}">${on ? arrow(m[a.id]) + ' ' + pct(Math.abs(m[a.id]), false) : '??'}</div>${sp}</div>`;
     }).join('');
-    return `<div class="stack" style="gap:22px">
-      <div class="row" style="justify-content:space-between"><div class="eyebrow">라운드 ${room.round + 1} · 장 마감</div>${done ? '' : '<button class="btn ghost" data-a="skip">한 번에 공개</button>'}</div>
-      <h2 style="font-size:clamp(1.4rem,3vw,2rem)">${r.title}${r.double ? ' <span style="color:var(--accent)">· 더블 찬스 ×2</span>' : ''}</h2>
+    return layout(`
+      <div class="row" style="justify-content:space-between;flex-wrap:nowrap"><div class="stack" style="gap:4px;min-width:0"><div class="eyebrow">라운드 ${room.round + 1} · 장 마감</div><h2 style="font-size:clamp(1.3rem,2.4vw,1.8rem)">${r.title}${r.double ? ' <span style="color:var(--accent)">· 더블 찬스 ×2</span>' : ''}</h2></div>${done ? '' : '<button class="btn ghost" data-a="skip">한 번에 공개</button>'}</div>
       <div class="moves">${cards}</div>
-      ${done ? `${bossVerdict(r)}${votePanel(r, true)}${interview()}${tipsVerdict(r)}<div class="twist">${r.twist}</div><div class="stack" style="gap:10px"><div class="eyebrow">현재 TOP 10 · 이번 라운드 수익률</div>${board(rankList(ports), 10, 'reveal')}</div>` : ''}
-    </div>`;
+      ${done ? `<div class="rv-grid">
+        <div class="stack" style="gap:12px;min-width:0">${bossVerdict(r)}${votePanel(r, true)}<div class="twist">${r.twist}</div></div>
+        <div class="stack" style="gap:10px;min-width:0">${interview()}${tipsVerdict(r)}</div>
+      </div>` : ''}`, done ? side('누적 순위 TOP 10', rankList(ports), 'reveal') : totalSide());
   }
 
   // 군중 포지션: 참가자마다 지금 들고 있는 비율(마지막 주문, 없으면 지난 라운드 비율)의 평균
@@ -407,18 +426,17 @@ export function mount(el, ctx) {
   function crowdPanel() {
     const c = crowdAlloc();
     return `<div class="herd stack" style="gap:8px"><div class="eyebrow" style="color:var(--fg)">👀 지금 모두의 투자 비율 (평균)</div>
-      <div class="crowd-bar">${ASSETS.map(x => c[x.id] >= 0.5 ? `<span style="flex:${c[x.id]};background:${x.color}">${c[x.id] >= 7 ? `${x.short} ${Math.round(c[x.id])}%` : ''}</span>` : '').join('')}</div>
-      <div class="row" style="gap:16px;font-size:1.05rem">${ASSETS.map(x => `<span class="row" style="gap:6px"><span class="dot" style="background:${x.color}"></span>${x.short} <b class="num">${Math.round(c[x.id])}%</b></span>`).join('')}</div></div>`;
+      <div class="crowd-bar">${ASSETS.map(x => c[x.id] >= 0.5 ? `<span style="flex:${c[x.id]};background:${x.color}">${c[x.id] >= 7 ? `${x.short} ${Math.round(c[x.id])}%` : ''}</span>` : '').join('')}</div></div>`;
   }
 
   // 회장님 믿음 투표. after=true(결과 화면)면 누가 맞혔는지 함께 보여 줌
   function votePanel(r, after) {
     const yes = votes.filter(v => v.trust).length, no = votes.length - yes, n = votes.length, py = n ? Math.round(yes / n * 100) : 50;
     if (after && !n) return '';
-    const win = after ? (r.bossWrong ? `안 믿은 ${no}명 승리!` : `믿은 ${yes}명 승리!`) : '';
-    return `<div class="card stack" style="gap:10px">
-      <div class="row" style="justify-content:space-between"><div class="eyebrow">🗳 회장님 말, 믿는다? 안 믿는다?</div><b>${after ? win : `${n}명 투표`}</b></div>
-      <div class="vote-bar"><span class="y" style="flex:${n ? yes : 1}">👍 믿는다 ${yes}명${n ? ` · ${py}%` : ''}</span><span class="n" style="flex:${n ? no : 1}">🙅 안 믿는다 ${no}명${n ? ` · ${100 - py}%` : ''}</span></div></div>`;
+    const win = after ? (r.bossWrong ? `안 따른 ${no}명 승리!` : `따른 ${yes}명 승리!`) : '';
+    return `<div class="card stack" style="gap:8px;padding:14px 16px">
+      <div class="row" style="justify-content:space-between"><div class="eyebrow">🗳 회장님 촉, 따른다? 안 따른다?</div><b>${after ? win : `${n}명 투표`}</b></div>
+      <div class="vote-bar"><span class="y" style="flex:${n ? yes : 1}">👍 따른다 ${yes}명${n ? ` · ${py}%` : ''}</span><span class="n" style="flex:${n ? no : 1}">🙅 안 따른다 ${no}명${n ? ` · ${100 - py}%` : ''}</span></div></div>`;
   }
 
   // 인터뷰 카드: 이번 라운드 수익률 최고·최저. 사회자가 마이크를 넘길 사람
@@ -428,19 +446,18 @@ export function mount(el, ctx) {
     rows.sort((a, b) => (b.roundRet || 0) - (a.roundRet || 0));
     const best = rows[0], worst = rows[rows.length - 1];
     const cell = (tag, p, q) => `<div class="iv"><div class="eyebrow">${tag}</div><div class="iv-nm">${esc(p.nick)}</div>
-      <div class="num ${cls(p.roundRet || 0)}" style="font-size:1.5rem;font-weight:700">${pct(p.roundRet || 0)}</div><div class="muted">${q}</div></div>`;
-    return `<div class="stack" style="gap:8px"><div class="eyebrow">🎤 인터뷰 타임</div><div class="ivs">
-      ${cell('이번 라운드 수익 1등', best, '비결이 뭐였나요?')}${cell('이번 라운드 수익 꼴등', worst, '무슨 생각이었나요?')}</div></div>`;
+      <div class="num ${cls(p.roundRet || 0)}" style="font-size:1.4rem;font-weight:700">${pct(p.roundRet || 0)}</div><div class="muted">${q}</div></div>`;
+    return `<div class="eyebrow">🎤 인터뷰 타임</div><div class="ivs">
+      ${cell('이번 라운드 수익 1등', best, '비결이 뭐였나요?')}${cell('이번 라운드 수익 꼴등', worst, '무슨 생각이었나요?')}</div>`;
   }
 
   function tipsVerdict(r) {
-    return `<div class="card stack" style="gap:8px"><div class="eyebrow">🤫 이번 라운드 찌라시 진위</div>
-      ${r.tips.map(t => `<div class="row" style="gap:10px;flex-wrap:nowrap;font-size:1.1rem"><b style="flex:none;color:${t.real ? 'var(--up)' : 'var(--down)'}">${t.real ? '진짜' : '가짜'}</b><span>${esc(t.text)}</span></div>`).join('')}</div>`;
+    return `<div class="card stack" style="gap:6px;padding:14px 16px"><div class="eyebrow">🤫 이번 라운드 찌라시 진위</div>
+      ${r.tips.map(t => `<div class="row" style="gap:10px;flex-wrap:nowrap;font-size:1rem"><b style="flex:none;color:${t.real ? 'var(--up)' : 'var(--down)'}">${t.real ? '진짜' : '가짜'}</b><span>${esc(t.text)}</span></div>`).join('')}</div>`;
   }
 
   function bossVerdict(r) {
-    return `<div class="boss"><div class="face" aria-hidden="true">임</div><div class="bubble"><b>임삼성 회장</b> “${esc(r.boss)}”<br>
-      <b style="font-size:1.4rem;color:${r.bossWrong ? 'var(--down)' : 'var(--up)'}">${r.bossWrong ? '🙈 회장님 헛다리!' : '🎯 회장님 촉 적중!'}</b></div></div>`;
+    return bossHtml(r, `<br><b style="font-size:1.35rem;color:${r.bossWrong ? 'var(--down)' : 'var(--up)'}">${r.bossWrong ? '🙈 회장님 헛다리!' : '🎯 회장님 촉 적중!'}</b>`);
   }
 
   function vFinal() {
