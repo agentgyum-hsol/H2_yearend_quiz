@@ -20,7 +20,7 @@ export function mount(el, { db, fs }) {
   const unsubs = [];
 
   el.innerHTML = `<div class="eh">
-    <div class="eh-top"><div class="display" style="font-size:1.5rem">제 <span style="color:var(--dancheong)">이모지</span>야👽</div><div class="meta" id="ehMeta"></div></div>
+    <div class="eh-top"><div class="display" style="font-size:1.5rem">이게 제 <span style="color:var(--dancheong)">이모지</span>야👽</div><div class="meta" id="ehMeta"></div></div>
     <div class="eh-progress"><i id="ehBar" style="width:0%"></i></div>
     <div class="eh-stage" id="ehStage" aria-live="polite"></div>
     <div class="eh-wrong" id="ehWrong" aria-label="지금 들어온 오답"></div>
@@ -175,7 +175,7 @@ export function mount(el, { db, fs }) {
       $("ehMeta").innerHTML = `<span class="pill">${MAIN}문제</span><span class="pill">참가 ${players.length}명</span>`;
       $("ehStage").innerHTML = `
         <div class="emoji" style="font-size:clamp(2.4rem,7vw,4.5rem)" aria-hidden="true">🐋⚔️🐋 🦐💥</div>
-        <h1 class="eh-title">제 <span>이모지</span>야👽</h1>
+        <h1 class="eh-title">이게 제 <span>이모지</span>야👽</h1>
         <ul class="rules eh-mean">
           <li>이모지를 보고 정답을 휴대폰에 써 주세요. 1인 1폰, 각자 풀기!</li>
           <li>속담으로 몸풀고, 사자성어·영화/드라마 제목·직장인 말이 섞여 나와요. 문제마다 <b>유형</b>을 알려 드려요</li>

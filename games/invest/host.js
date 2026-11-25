@@ -7,7 +7,7 @@ import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS,
 import { watchWinners, pickWinner, otherGameTitle, confirmWinner, clearWinner } from '../../shared/winners.js';
 
 const GAME = 'invest';
-const TITLES = { emoji: '제 이모지야👽', invest: '반도체왕 임삼성', similar: 'H2맨틀' };
+const TITLES = { emoji: '이게 제 이모지야👽', invest: '반도체왕 임삼성', similar: 'H2맨틀' };
 const PHASE_LABEL = { news: '뉴스·토의', market: '장', reveal: '결과' };
 const newRun = () => Date.now().toString(36);
 const T = MARKET_SECONDS, PRE = PRE_SECONDS, W = MARKET_WALL;

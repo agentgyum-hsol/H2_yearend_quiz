@@ -1,6 +1,6 @@
 // H2맨틀 참가자 화면 (휴대폰). 단어 목록(약 200KB)만 받아 모르는 단어는 보내지 않고,
 // 유사도는 운영자 화면이 채점해 feedback 문서로 돌려줍니다.
-import { ROOM, GAME_ID, ROUNDS, DURATION_MS, GRACE_MS, MIN_GAP_MS, loadStyle, esc, norm, resolve, fmtSim, fmtRank, heat, loadWords } from "./common.js";
+import { ROOM, GAME_ID, ROUNDS, DURATION_MS, GRACE_MS, MIN_GAP_MS, loadStyle, esc, norm, resolve, fmtSim, fmtRank, bar, hintFlash, loadWords } from "./common.js";
 import { ms } from "../../shared/db.js";
 
 export function mount(el, { db, fs, player }) {
@@ -66,7 +66,7 @@ export function mount(el, { db, fs, player }) {
       const keep = typing ? typing.value : "";
       root.innerHTML = `
         <div class="sp-meta"><span class="pill">${room.round + 1} / ${ROUNDS} 라운드</span><span class="sp-timer" id="spTimer"></span></div>
-        ${(room.hints || []).length ? `<div class="sp-hints">${room.hints.map(h => `<span><small>💡 ${h.r}위 힌트</small> ${esc(h.w)}</span>`).join("")}</div>` : ""}
+        ${(room.hints || []).length ? `<div class="sp-hints">${room.hints.map(h => `<span class="${hintFlash(h)}"><small>💡 ${h.r}위 힌트</small> ${esc(h.w)}</span>`).join("")}</div>` : ""}
         <div class="sp-top2" id="spTop2"></div>
         <form id="spForm" autocomplete="off">
           <input class="field" id="spText" maxlength="12" placeholder="${words ? "단어를 넣어 보세요" : wordErr ? "단어 목록을 못 받았어요. 새로고침해 주세요" : "단어 목록 받는 중…"}" enterkeyhint="send" autocapitalize="off" spellcheck="false" ${words ? "" : "disabled"}>
@@ -76,7 +76,7 @@ export function mount(el, { db, fs, player }) {
         <div id="spSolved"></div>
         <div class="sp-last" id="spLast"></div>
         <div class="sp-sub">모두의 추측 <span class="sp-me-key">내 추측</span></div>
-        <div class="sp-head"><span>#</span><span>단어</span><span>유사도</span><span>순위</span></div>
+        <div class="sp-head"><span>#</span><span>단어</span><span class="s">단어 유사도</span><span class="r">순위</span></div>
         <div class="sp-list" id="spList"></div>`;
       const inp = root.querySelector("#spText"); inp.value = keep;
       root.querySelector("#spForm").onsubmit = submit;
@@ -145,7 +145,7 @@ export function mount(el, { db, fs, player }) {
     if (x.u) return `<div class="sp-row ${cls}"><span class="i mono">${i}</span><span class="w">${esc(x.w)}</span><span class="s muted">모르는 단어</span><span class="r"></span></div>`;
     if (x.hit) return `<div class="sp-row hit ${cls}"><span class="i"></span><span class="w">🎉 정답!${nk(x)}</span><span class="s"></span><span class="r"></span></div>`;
     return `<div class="sp-row ${x.r === 0 ? "hit" : ""} ${x.mine ? "mine" : ""} ${cls}"><span class="i mono">${i ?? ""}</span><span class="w">${esc(x.w)}${nk(x)}</span><span class="s mono">${fmtSim(x.s)}</span>
-      <span class="r"><span class="bar"><i style="width:${heat(x.r) * 100}%"></i></span><small class="mono">${fmtRank(x.r)}</small></span></div>`;
+      <span class="r">${bar(x.r, `${room?.round}:${x.w}`)}<small class="mono">${fmtRank(x.r)}</small></span></div>`;
   }
 
   function renderList() {
