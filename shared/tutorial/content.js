@@ -18,9 +18,12 @@ export async function loadTutorial(gameId) {
   const make = { similar: similarSteps, emoji: emojiSteps, invest: investSteps }[gameId];
   const steps = make ? await make(g) : [];
   steps.push({
-    title: "준비 끝!",
-    big: () => `${big("🎉")}<p class="tu-lead">연습은 점수에 들어가지 않아요.<br>이제 진짜 <b>${esc(g.title)}</b> 시작합니다!</p>`,
-    phone: `<p class="tu-lead">연습 끝! 곧 진짜 게임이 시작돼요.</p>`,
+    // 마지막 쪽: 게임 시작 전 대기실. 입장한 사람이 실시간으로 보이고, 운영자가 넘기면 게임 시작 화면으로
+    title: "곧 시작합니다!", waiting: true,
+    big: live => `<p class="tu-lead">연습은 점수에 들어가지 않아요. 이제 진짜 <b>${esc(g.title)}</b>!</p>
+      <div class="tu-count"><b class="mono">${live.players.length}</b><span class="muted">명 참가</span></div>
+      ${live.players.length ? `<div class="tu-chips">${live.players.map(p => `<span>${esc(p.nick)}</span>`).join("")}</div>` : `<p class="muted">아직 입장한 사람이 없어요. QR로 입장해 주세요.</p>`}`,
+    phone: `<p class="tu-lead">입장 완료! 진행자가 시작하면 바로 게임이 열려요.</p>`,
   });
   return { id: g.id, title: g.title, emoji: g.emoji, steps };
 }
