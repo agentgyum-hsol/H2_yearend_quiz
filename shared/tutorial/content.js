@@ -38,6 +38,7 @@ const chips = (names, max = 24) => names.length
 async function similarSteps(g) {
   const C = await load("../../games/similar/common.js");
   const P = await import("./similar-practice.js");
+  const S = await load("../../games/similar/practice.js");
   const ROUNDS = C.ROUNDS ?? 3, MIN = sec(C.DURATION_MS ?? 300000) / 60, CUT = C.RANK_CUTOFF ?? 1000;
   const HINTS = C.HINT_RANKS ?? [100, 30, 10], TOP = C.TOP_SIM_MIN ?? 0.8;
   const solve = C.solvePoints || (o => Math.max(50, 100 - 2 * o));
@@ -57,7 +58,9 @@ async function similarSteps(g) {
     { title: "점수와 우승", big: () => `${li([`맞히면 <b>${solve(0)}점</b>, 다음 사람부터 ${solve(0) - solve(1)}점씩 줄어 최소 ${solve(99)}점`, `못 맞혀도 가장 가까이 간 순위로 부분 점수: 10위 안 ${near(10)}점, 100위 안 ${near(100)}점, ${CUT}위 안 ${near(CUT)}점`, `${ROUNDS}라운드 합계 1등이 우승. 같으면 맞힌 라운드 수, 그다음 걸린 시간`])}`,
       phone: li([`맞히면 ${solve(0)}점부터, 빨리 맞힐수록 높아요`, "못 맞혀도 가까이 가면 부분 점수", `${ROUNDS}라운드 합계로 우승`]) },
     { title: "연습 라운드", practice: { id: "similar", phase: "play" },
-      big: live => `<p class="tu-lead">비밀 단어를 찾아보세요. <span class="muted">(점수 없음, 연말 하면 떠오르는 단어)</span></p>${similarBoard(live.docs, row, table)}`,
+      // 본 게임과 같은 화면 (games/similar/practice.js). 운영자 화면이 연습 기록을 모아 휴대폰용 모두의 추측을 씀
+      big: live => (S.practiceBig ? S.practiceBig(live.docs) : similarBoard(live.docs, row, table)),
+      sync: (docs, ctx) => S.syncPracticeFeed && S.syncPracticeFeed(docs, ctx),
       phone: "" },
     { title: "연습 정답 공개", practice: { id: "similar", phase: "reveal" },
       big: live => { const solved = byAt(live.docs.filter(d => d.solved)).map(d => d.nick);

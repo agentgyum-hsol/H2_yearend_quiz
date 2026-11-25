@@ -1,6 +1,6 @@
 // H2맨틀 운영자 화면 (프로젝터용). 비밀 단어를 갖고 있고, 참가자 추측을 채점합니다.
 import { ROOM, GAME_ID, TITLE, ROUNDS, FEED_TOP, FEED_RECENT, FEED_EVERY_MS, DURATION_MS, EXTEND_MS, GRACE_MS, HINT_RANKS,
-  solvePoints, nearPoints, loadStyle, esc, norm, fmtSim, fmtRank, bar, hintFlash, ranked } from "./common.js";
+  solvePoints, nearPoints, loadStyle, esc, norm, fmtSim, fmtRank, hintFlash, feedBoard, ranked } from "./common.js";
 import { loadEngine, SUGGEST, PARTY_ANSWERS } from "./engine.js";
 import { ms } from "../../shared/db.js";
 import { GAMES } from "../../shared/games.js";
@@ -78,6 +78,13 @@ export function mount(el, { db, fs }) {
       if (!by.has(g.pid)) by.set(g.pid, []);
       by.get(g.pid).push({ ...g, at });
     }
+    // 이미 나온 단어 막기: 단어마다 처음 넣은 사람만 인정. 공개된 힌트 단어는 공개 뒤로 아무도 못 넣음. 정답은 막지 않음
+    const firstBy = new Map();
+    for (const g of [...by.values()].flat().sort((a, b) => a.at - b.at)) {
+      const h = t.lookup(norm(g.word));
+      if (h && h.r !== 0 && !firstBy.has(h.w)) firstBy.set(h.w, g.pid);
+    }
+    const hintAt = new Map((room.hints || []).map(h => [h.w, h.at || 0]));
     const next = new Map(), events = [];
     for (const [pid, gs] of by) {
       gs.sort((a, b) => a.at - b.at);
@@ -89,12 +96,16 @@ export function mount(el, { db, fs }) {
         if (!w || seen.has(w)) continue;
         seen.add(w);
         const hit = t.lookup(w) || { w, s: null, r: null, u: 1 };
+        if (!hit.u && hit.r !== 0) {
+          const dup = hintAt.has(hit.w) && g.at >= hintAt.get(hit.w) ? 2 : firstBy.get(hit.w) !== pid ? 1 : 0;
+          if (dup) { list.push({ w: hit.w, dup }); continue; }
+        }
         list.push(hit);
         if (!hit.u) events.push({ pid, nick: g.nick, w: hit.w, s: hit.s, r: hit.r, at: g.at });
         if (hit.r === 0) solvedMs = Math.max(0, g.at - (st ?? g.at));
         if (!hit.u && (best == null || hit.s > best.s)) best = hit;
       }
-      next.set(pid, { pid, nick: gs[gs.length - 1].nick, list, best, solvedMs, n: list.length });
+      next.set(pid, { pid, nick: gs[gs.length - 1].nick, list, best, solvedMs, n: list.filter(x => !x.dup).length });
     }
     live = next;
     feed = buildFeed(events);
@@ -132,7 +143,7 @@ export function mount(el, { db, fs }) {
     const recent = [...events].sort((a, b) => b.at - a.at).slice(0, FEED_RECENT)
       .map(e => (e.r === 0 ? { nick: e.nick, hit: 1 } : { w: e.w, s: e.s, r: e.r, nick: e.nick }));
     const solved = [...live.values()].filter(p => p.solvedMs != null).sort((a, b) => a.solvedMs - b.solvedMs).map(p => p.nick);
-    return { round: room.round, top, recent, solved, total: events.length };
+    return { round: room.round, top, recent, solved, total: events.length, seen: [...first.keys()] }; // seen: 이미 나온 단어 (정답 제외)
   }
   function scheduleFeed() {
     if (!feed || feedTimer) return;
@@ -424,20 +435,8 @@ export function mount(el, { db, fs }) {
     const solvedNames = rows.filter(p => p.solvedMs != null).map(p => `<span class="chip ok">🎉 ${esc(p.nick)} <small class="mono">${fmtTime(p.solvedMs)}</small></span>`).join("");
     box.innerHTML = `
       ${solvedNames ? `<div class="sh-solved">${solvedNames}</div>` : ""}
-      ${feed.recent[0] ? `<div class="sh-recent"><div class="muted sh-feed-h">방금 들어온 추측</div><div class="sh-feed-row sh-feed-head"><span></span><span>단어</span><span>추측한 사람</span><span class="s">단어 유사도</span><span class="r">순위</span></div>${feedRow(feed.recent[0])}</div>` : ""}
-      <div class="sh-feed">
-        <div class="card"><div class="muted sh-feed-h">가장 가까운 단어 1~10</div><div class="sh-feed-row sh-feed-head"><span></span><span>단어</span><span>추측한 사람</span><span class="s">단어 유사도</span><span class="r">순위</span></div>
-          ${feed.top.slice(0, 10).map((x, i) => feedRow(x, i + 1)).join("")}</div>
-        ${feed.top.length > 10 ? `<div class="card"><div class="muted sh-feed-h">11~20</div><div class="sh-feed-row sh-feed-head"><span></span><span>단어</span><span>추측한 사람</span><span class="s">단어 유사도</span><span class="r">순위</span></div>
-          ${feed.top.slice(10, 20).map((x, i) => feedRow(x, i + 11)).join("")}</div>` : ""}
-      </div>`;
+      ${feedBoard(feed, room.round)}`;
   }
-  function feedRow(x, i) {
-    if (x.hit) return `<div class="sh-feed-row hit"><span class="i"></span><span class="w">🎉 정답!</span><span class="n">${esc(x.nick)}</span><span class="s"></span><span class="r"></span></div>`;
-    return `<div class="sh-feed-row"><span class="i mono muted">${i ?? ""}</span><span class="w">${esc(x.w)}</span><span class="n">${esc(x.nick)}</span>
-      <span class="s mono">${fmtSim(x.s)}</span><span class="r">${bar(x.r, `${room?.round}:${x.w}`)}<small class="mono">${fmtRank(x.r)}</small></span></div>`;
-  }
-
 
   let busy = false;
   async function act(a) {

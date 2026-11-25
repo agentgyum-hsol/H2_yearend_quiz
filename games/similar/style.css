@@ -121,7 +121,7 @@
 .sp-top2-i span { font-size: .9rem; }
 .sp-top2-i small.mono { grid-column: 2 / 4; font-size: .72rem; color: var(--muted); }
 .sp-top2-i.mine { border-color: #5fb3ff; }
-#spForm { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+#spForm, .sp-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .sp-msg { min-height: 1.3em; font-size: .92rem; color: var(--gold); }
 .sp-solved { background: color-mix(in srgb, var(--pine) 22%, transparent); border: 1px solid var(--pine); border-radius: 12px; padding: 10px 14px; }
 .sp-head, .sp-row { display: grid; grid-template-columns: 2.2em minmax(0, 1fr) 4.8em minmax(5.5em, 7em); gap: 8px; align-items: center; }
@@ -162,10 +162,11 @@
 .sh-feed-row .r { display: grid; gap: 2px; }
 .sh-feed-row .r small { font-size: .7em; color: var(--muted); text-align: right; }
 .sh-feed-row.hit .w { color: var(--pine); }
-.sh-feed-head { font-size: clamp(.75rem, 1.1vw, .95rem); color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 4px; }
-.sh-recent .sh-feed-row.sh-feed-head { font-size: clamp(.75rem, 1.1vw, .95rem); }
-.sh-feed-head .s { color: var(--gold); font-weight: 600; white-space: nowrap; }
-.sh-feed-head .r { text-align: center; }
+/* 헤더 줄은 내용 줄과 같은 글자 크기를 써야 em 단위 칸 너비가 같아짐. 글자만 작게 */
+.sh-feed-head { color: var(--muted); border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.sh-feed-head > span { font-size: .62em; white-space: nowrap; }
+.sh-feed-head .s { color: var(--gold); font-weight: 600; text-align: right; }
+.sh-feed-head .r { text-align: right; }
 .sh-live { width: min(1200px, 100%); }
 
 /* 방금 들어온 추측 1개 (운영자 큰 화면) */
@@ -175,3 +176,7 @@
 /* 모두의 추측 (참가자) */
 .sp-row .nk { display: block; font-size: .75rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-sub { font-size: .85rem; color: var(--muted); margin: 6px 0 2px; }
+
+/* 연습 라운드 (게임 설명 마지막 단계) */
+.sh-practice { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 14px; font-size: 1rem; }
+.sp-practice { text-align: left; }
