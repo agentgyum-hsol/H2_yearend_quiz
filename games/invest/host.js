@@ -1,14 +1,14 @@
 // 반도체왕 임삼성: 운영자(프로젝터) 화면
 // mount(el, ctx) → unmount 함수. ctx = { db, fs, gameId, joinUrl? }
-// 진행: 로비 → (라운드마다) 프리장 20초(뉴스 + 시초 주문, 화면이 뜨자마자 카운트다운) → 본장 30초(15초째 속보로 5초 정지) → 자동 마감·결과 → … → 최종(TOP 5, 우승 확정)
-// 뉴스 단계는 '결과 취소'로 라운드를 되돌렸을 때만 씀(운영자가 프리장을 다시 엶).
-import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS, MARKET_WALL, FLASH_SECONDS, SLIDER_LOCK_SECONDS, TOP_N, tickAt, flashLeft, moveOf, pricePath, valueAt, indexSeries,
+// 진행: 로비 → (라운드마다) 뉴스·토의(찌라시, 군중 포지션) → [운영자 선택: 프리장 20초 시초 주문 | 바로 본장]
+//       → 본장 30초(15초째 속보로 15초 정지·토의) → 자동 마감·결과(임삼성 조언 적중/헛다리, 찌라시 진위) → … → 최종(TOP 5, 우승 확정)
+import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS, MARKET_WALL, preOf, FLASH_SECONDS, SLIDER_LOCK_SECONDS, TOP_N, tickAt, flashLeft, cashOf, moveOf, pricePath, valueAt, indexSeries,
   toMs, won, pct, cls, arrow, esc, rankList, lineChart, loadCss } from './data.js';
 import { watchWinners, pickWinner, otherGameTitle, confirmWinner, clearWinner } from '../../shared/winners.js';
 
 const GAME = 'invest';
 const TITLES = { emoji: '이게 제 이모지야👽', invest: '반도체왕 임삼성', similar: 'H2맨틀' };
-const PHASE_LABEL = { market: '프리장 → 본장', reveal: '결과' };
+const PHASE_LABEL = { news: '뉴스·토의', market: '장', reveal: '결과' };
 const newRun = () => Date.now().toString(36);
 const T = MARKET_SECONDS, PRE = PRE_SECONDS, W = MARKET_WALL;
 
@@ -19,9 +19,10 @@ export function mount(el, ctx) {
   const roomRef = fs.doc(db, 'rooms', GAME);
   const portCol = fs.collection(db, 'rooms', GAME, 'portfolios');
   const tradeCol = (run, r) => fs.collection(db, 'rooms', GAME, `trades_${run}_${r}`);
+  const voteCol = (run, r) => fs.collection(db, 'rooms', GAME, `votes_${run}_${r}`); // 회장님 믿음 투표
   const ts = () => (fs.serverTimestamp ? fs.serverTimestamp() : Date.now());
 
-  let room = null, ports = {}, trades = [], tradeKey = '', unTrades = null, winners = {}, roster = [];
+  let room = null, ports = {}, trades = [], tradeKey = '', unTrades = null, votes = [], unVotes = null, winners = {}, roster = [];
   let ui = { confirm: null, revealed: 0, revealKey: '', busy: false, err: '', settling: '' };
   let timer = null;
 
@@ -42,6 +43,8 @@ export function mount(el, ctx) {
     if (key !== tradeKey) {
       unTrades && unTrades(); trades = []; tradeKey = key;
       unTrades = fs.onSnapshot(tradeCol(room.runId, room.round), s => { trades = s.docs.map(d => d.data()); render(); });
+      unVotes && unVotes(); votes = [];
+      unVotes = fs.onSnapshot(voteCol(room.runId, room.round), s => { votes = s.docs.map(d => d.data()); render(); });
     }
     if (room.phase === 'reveal' && ui.revealKey !== key) startReveal(key);
     render();
@@ -60,7 +63,8 @@ export function mount(el, ctx) {
 
   function showErr(e) { ui.err = '서버 연결에 문제가 있어요: ' + (e?.message || e); render(); }
   // 본장 시작 기준 경과 시간(운영자 시계). 음수면 프리장
-  const elapsedMs = () => (room?.marketStartMs ? Date.now() - (room.marketStartMs + PRE * 1000) : -PRE * 1000);
+  const pre = () => preOf(room);
+  const elapsedMs = () => (room?.marketStartMs ? Date.now() - (room.marketStartMs + pre() * 1000) : -pre() * 1000);
   const isPre = () => room?.phase === 'market' && elapsedMs() < 0;
   const curTick = () => tickAt(Math.max(0, elapsedMs()));
   const flashNow = () => (room?.phase === 'market' && !isPre() ? flashLeft(elapsedMs()) : 0);
@@ -68,7 +72,7 @@ export function mount(el, ctx) {
   /* ---------- 주문 기록 → 자산 ---------- */
   // 참가자별 주문을 시간순으로 모아 tick 으로 바꿈. 장 시작 전 주문은 0초(시초가)로 체결.
   function tradesByPid() {
-    const open = toMs(room.marketStart), start = open == null ? null : open + PRE * 1000; // 서버 시각 기준 본장 시작
+    const open = toMs(room.marketStart), start = open == null ? null : open + pre() * 1000; // 서버 시각 기준 본장 시작
     const by = {};
     trades.map(t => ({ ...t, ms: toMs(t.at) ?? t.atMs }))
       .filter(t => t.ms != null && (!start || t.ms - start <= W * 1000 + 500))
@@ -103,7 +107,7 @@ export function mount(el, ctx) {
     return act(async () => {
       // 마감 직전 주문이 구독에 아직 안 들어왔을 수 있어 서버에서 한 번 더 읽음
       try { const snap = await fs.getDocs(tradeCol(room.runId, room.round)); trades = snap.docs.map(d => d.data()); } catch (e) { /* 구독 목록으로 진행 */ }
-      const r = room.round, by = tradesByPid(), open = toMs(room.marketStart), start = open == null ? null : open + PRE * 1000;
+      const r = room.round, by = tradesByPid(), open = toMs(room.marketStart), start = open == null ? null : open + pre() * 1000;
       const before = rankList(ports).map(p => p.id);
       const next = {};
       Object.entries(ports).forEach(([id, p]) => {
@@ -182,10 +186,11 @@ export function mount(el, ctx) {
   root.addEventListener('click', e => {
     const t = e.target.closest('[data-a]'); if (!t || t.disabled) return;
     const a = t.dataset.a;
-    // 라운드가 시작되면 바로 프리장 카운트다운 (뉴스는 프리장 화면에 함께 나옴)
-    const openRound = r => go({ phase: 'market', round: r, marketStart: ts(), marketStartMs: Date.now() });
+    // 라운드를 열면 먼저 뉴스·토의 화면. 운영자가 프리장(시초 주문)을 열지, 바로 본장을 열지 고름
+    const openRound = r => go({ phase: 'news', round: r, newsStartMs: Date.now(), marketStart: null, marketStartMs: null });
     if (a === 'start') openRound(0);
-    else if (a === 'open') go({ phase: 'market', marketStart: ts(), marketStartMs: Date.now() });
+    else if (a === 'open-pre') go({ phase: 'market', preSec: PRE, marketStart: ts(), marketStartMs: Date.now() });
+    else if (a === 'open-now') go({ phase: 'market', preSec: 0, marketStart: ts(), marketStartMs: Date.now() });
     else if (a === 'settle') settle();
     else if (a === 'next') room.round >= ROUNDS.length - 1 ? go({ phase: 'final' }) : openRound(room.round + 1);
     else if (a === 'unsettle') unsettle();
@@ -243,8 +248,9 @@ export function mount(el, ctx) {
         (winners[GAME] ? `<button class="btn ghost" data-a="unconfirm-win" ${busy}>우승 확정 취소</button>` : '');
     } else {
       steps = `<span class="step">R${room.round + 1}/${ROUNDS.length}</span>` +
-        ['market', 'reveal'].map(p => `<span class="step ${p === room.phase || (p === 'market' && room.phase === 'news') ? 'on' : ''}">${PHASE_LABEL[p]}</span>`).join('');
-      if (room.phase === 'news') btns = `<button class="btn primary" data-a="open" ${busy}>프리장 다시 열기 (${PRE}초 뒤 본장 자동 시작)</button>`;
+        ['news', 'market', 'reveal'].map(p => `<span class="step ${p === room.phase ? 'on' : ''}">${PHASE_LABEL[p]}</span>`).join('');
+      if (room.phase === 'news') btns = `<button class="btn ghost" data-a="open-now" ${busy}>바로 본장 시작</button>` +
+        `<button class="btn primary" data-a="open-pre" ${busy}>프리장 열기 (${PRE}초 시초 주문 → 본장)</button>`;
       if (room.phase === 'market') {
         const over = elapsedMs() >= W * 1000;
         btns = `<button class="btn primary" data-a="settle" ${over && !ui.busy ? '' : 'disabled'}>${over ? '마감 · 결과 공개' : isPre() ? '프리장 진행 중…' : flashNow() ? '속보! 장 일시 정지…' : '본장 진행 중…'}</button>`;
@@ -269,9 +275,11 @@ export function mount(el, ctx) {
         <h1>반도체왕 <span style="color:var(--accent)">임삼성</span></h1>
         <ul class="rules" style="font-size:1.15rem">
           <li>모두 <b>${won(START_MONEY)}</b>으로 시작, ${ROUNDS.length}라운드 뒤 자산 1등이 올해의 반도체왕</li>
-          <li>라운드가 열리면 바로 <b>${PRE}초 프리장</b>: 뉴스 보고 시초 주문</li>
+          <li>라운드마다 <b>뉴스·토의</b>: 내 폰의 <b>비밀 찌라시</b>는 진짜일 수도, 가짜일 수도! 옆 사람과 맞춰 보세요</li>
+          <li>운영자가 고르면 <b>${PRE}초 프리장</b>: 본장 시작 가격으로 시초 주문</li>
           <li><b>${T}초 본장</b>: 차트를 보며 슬라이더로 비율 변경</li>
-          <li>본장 중간 <b>추가 속보</b>: 장이 ${FLASH_SECONDS}초 멈추고 그 사이 결정</li>
+          <li>본장 중간 <b>추가 속보</b>: 장이 ${FLASH_SECONDS}초 멈추고 토의 타임. 이때만 <b>모두의 투자 비율</b> 공개</li>
+          <li>임삼성 회장의 조언은 <b>가끔 헛다리</b>. 믿을지 말지는 여러분 몫</li>
           <li>거래 수수료: 본장에서 주문하면 슬라이더가 <b>${SLIDER_LOCK_SECONDS}초 잠김</b></li>
           <li>마지막 라운드는 등락 2배 <b>더블 찬스</b></li>
         </ul>
@@ -302,14 +310,15 @@ export function mount(el, ctx) {
     }).join('')}</div>`;
   }
 
-  function vNews() { // 결과 취소 뒤에만 나옴: 운영자가 프리장을 다시 열 때까지 대기
+  function vNews() { // 라운드 시작: 뉴스를 띄워 두고 토의. 운영자가 프리장 또는 바로 본장을 엶
     const r = ROUNDS[room.round];
     return `<div class="stack" style="gap:24px">
-      <div class="eyebrow">라운드 ${room.round + 1} / ${ROUNDS.length} · 라운드 다시 열기 대기</div>
+      <div class="eyebrow">라운드 ${room.round + 1} / ${ROUNDS.length} · 뉴스 · 토의 시간</div>
       ${r.double ? doubleBanner() : ''}
       <article class="news"><div class="when">${r.when}</div><h2>${r.title}</h2><ul>${r.bullets.map(b => `<li>${b}</li>`).join('')}</ul></article>
       <div class="boss"><div class="face" aria-hidden="true">임</div><div class="bubble"><b>임삼성 회장</b><br>${r.boss}</div></div>
-      <div class="card row" style="justify-content:space-between"><b>다음: ${PRE}초 프리장 → ${T}초 본장</b><span class="muted">아래 버튼을 누르면 바로 카운트다운이 시작돼요.</span></div>
+      ${votePanel(r, false)}
+      <div class="card row" style="justify-content:space-between"><b style="font-size:1.3rem">💬 작전 회의! 폰의 비밀 찌라시를 옆 사람과 맞춰 보세요. 회장님 말, 믿을까요?</b><span class="muted">폰에서 비율을 미리 정해 둘 수 있어요.</span></div>
       ${room.round > 0 ? `<div class="stack" style="gap:10px"><div class="eyebrow">현재 TOP 10</div>${board(rankList(ports), 10, 'total')}</div>` : ''}
     </div>`;
   }
@@ -349,9 +358,10 @@ export function mount(el, ctx) {
         <span class="muted">주문 ${trades.length}건</span>
       </div>
       ${fl ? `<div class="flash" role="alert"><div class="row" style="justify-content:space-between;align-items:center">
-          <span class="flash-tag">추가 속보 · 장 일시 정지</span><span class="clock num">${fl}<span>초</span></span></div>
+          <span class="flash-tag">추가 속보 · 장 정지 · 토의 타임</span><span class="clock num">${fl}<span>초</span></span></div>
         <h2>${r.flash.title}</h2><ul>${r.flash.bullets.map(b => `<li>${b}</li>`).join('')}</ul>
-        <div class="muted">지금 주문하면 멈춘 가격으로 체결돼요. ${fl}초 뒤 장 재개!</div></div>` : ''}
+        <div class="muted" style="font-size:1.15rem">💬 주변과 상의하세요! 지금 주문하면 멈춘 가격으로 체결, ${fl}초 뒤 장 재개</div>
+        ${crowdPanel()}</div>` : ''}
       <div class="market">
         <div class="card stack" style="gap:12px;min-width:0">
           <div class="row" style="justify-content:space-between;align-items:flex-end">
@@ -378,8 +388,59 @@ export function mount(el, ctx) {
       <div class="row" style="justify-content:space-between"><div class="eyebrow">라운드 ${room.round + 1} · 장 마감</div>${done ? '' : '<button class="btn ghost" data-a="skip">한 번에 공개</button>'}</div>
       <h2 style="font-size:clamp(1.4rem,3vw,2rem)">${r.title}${r.double ? ' <span style="color:var(--accent)">· 더블 찬스 ×2</span>' : ''}</h2>
       <div class="moves">${cards}</div>
-      ${done ? `<div class="twist">${r.twist}</div><div class="stack" style="gap:10px"><div class="eyebrow">현재 TOP 10 · 이번 라운드 수익률</div>${board(rankList(ports), 10, 'reveal')}</div>` : ''}
+      ${done ? `${bossVerdict(r)}${votePanel(r, true)}${interview()}${tipsVerdict(r)}<div class="twist">${r.twist}</div><div class="stack" style="gap:10px"><div class="eyebrow">현재 TOP 10 · 이번 라운드 수익률</div>${board(rankList(ports), 10, 'reveal')}</div>` : ''}
     </div>`;
+  }
+
+  // 군중 포지션: 참가자마다 지금 들고 있는 비율(마지막 주문, 없으면 지난 라운드 비율)의 평균
+  function crowdAlloc() {
+    const by = tradesByPid(), ids = Object.keys(ports), sum = { cash: 0 };
+    INVEST.forEach(x => { sum[x.id] = 0; });
+    ids.forEach(id => {
+      const tr = by[id], a = { ...ZERO, ...(tr?.length ? tr[tr.length - 1].alloc : ports[id].lastAlloc) };
+      INVEST.forEach(x => { sum[x.id] += a[x.id] || 0; }); sum.cash += cashOf(a);
+    });
+    const n = ids.length || 1, out = {};
+    ASSETS.forEach(x => { out[x.id] = sum[x.id] / n; });
+    return out;
+  }
+  function crowdPanel() {
+    const c = crowdAlloc();
+    return `<div class="herd stack" style="gap:8px"><div class="eyebrow" style="color:var(--fg)">👀 지금 모두의 투자 비율 (평균)</div>
+      <div class="crowd-bar">${ASSETS.map(x => c[x.id] >= 0.5 ? `<span style="flex:${c[x.id]};background:${x.color}">${c[x.id] >= 7 ? `${x.short} ${Math.round(c[x.id])}%` : ''}</span>` : '').join('')}</div>
+      <div class="row" style="gap:16px;font-size:1.05rem">${ASSETS.map(x => `<span class="row" style="gap:6px"><span class="dot" style="background:${x.color}"></span>${x.short} <b class="num">${Math.round(c[x.id])}%</b></span>`).join('')}</div></div>`;
+  }
+
+  // 회장님 믿음 투표. after=true(결과 화면)면 누가 맞혔는지 함께 보여 줌
+  function votePanel(r, after) {
+    const yes = votes.filter(v => v.trust).length, no = votes.length - yes, n = votes.length, py = n ? Math.round(yes / n * 100) : 50;
+    if (after && !n) return '';
+    const win = after ? (r.bossWrong ? `안 믿은 ${no}명 승리!` : `믿은 ${yes}명 승리!`) : '';
+    return `<div class="card stack" style="gap:10px">
+      <div class="row" style="justify-content:space-between"><div class="eyebrow">🗳 회장님 말, 믿는다? 안 믿는다?</div><b>${after ? win : `${n}명 투표`}</b></div>
+      <div class="vote-bar"><span class="y" style="flex:${n ? yes : 1}">👍 믿는다 ${yes}명${n ? ` · ${py}%` : ''}</span><span class="n" style="flex:${n ? no : 1}">🙅 안 믿는다 ${no}명${n ? ` · ${100 - py}%` : ''}</span></div></div>`;
+  }
+
+  // 인터뷰 카드: 이번 라운드 수익률 최고·최저. 사회자가 마이크를 넘길 사람
+  function interview() {
+    const rows = Object.values(ports).filter(p => p.settledRound === room.round);
+    if (rows.length < 2) return '';
+    rows.sort((a, b) => (b.roundRet || 0) - (a.roundRet || 0));
+    const best = rows[0], worst = rows[rows.length - 1];
+    const cell = (tag, p, q) => `<div class="iv"><div class="eyebrow">${tag}</div><div class="iv-nm">${esc(p.nick)}</div>
+      <div class="num ${cls(p.roundRet || 0)}" style="font-size:1.5rem;font-weight:700">${pct(p.roundRet || 0)}</div><div class="muted">${q}</div></div>`;
+    return `<div class="stack" style="gap:8px"><div class="eyebrow">🎤 인터뷰 타임</div><div class="ivs">
+      ${cell('이번 라운드 수익 1등', best, '비결이 뭐였나요?')}${cell('이번 라운드 수익 꼴등', worst, '무슨 생각이었나요?')}</div></div>`;
+  }
+
+  function tipsVerdict(r) {
+    return `<div class="card stack" style="gap:8px"><div class="eyebrow">🤫 이번 라운드 찌라시 진위</div>
+      ${r.tips.map(t => `<div class="row" style="gap:10px;flex-wrap:nowrap;font-size:1.1rem"><b style="flex:none;color:${t.real ? 'var(--up)' : 'var(--down)'}">${t.real ? '진짜' : '가짜'}</b><span>${esc(t.text)}</span></div>`).join('')}</div>`;
+  }
+
+  function bossVerdict(r) {
+    return `<div class="boss"><div class="face" aria-hidden="true">임</div><div class="bubble"><b>임삼성 회장</b> “${esc(r.boss)}”<br>
+      <b style="font-size:1.4rem;color:${r.bossWrong ? 'var(--down)' : 'var(--up)'}">${r.bossWrong ? '🙈 회장님 헛다리!' : '🎯 회장님 촉 적중!'}</b></div></div>`;
   }
 
   function vFinal() {
@@ -416,6 +477,6 @@ export function mount(el, ctx) {
   }
 
   return function unmount() {
-    clearInterval(timer); clearInterval(tickTimer); unRoom(); unPorts(); unWin(); unRoster(); unTrades && unTrades(); el.innerHTML = '';
+    clearInterval(timer); clearInterval(tickTimer); unRoom(); unPorts(); unWin(); unRoster(); unTrades && unTrades(); unVotes && unVotes(); el.innerHTML = '';
   };
 }

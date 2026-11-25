@@ -174,3 +174,19 @@
 .inv-play .lock{background:var(--panel2);border-radius:8px;padding:6px 10px;font-size:.9rem;text-align:center}
 .inv-play .lock b{color:var(--accent)}
 @media (prefers-reduced-motion:reduce){.inv .flash{animation:none}}
+
+/* 군중 포지션(속보 정지 때만) */
+.inv .herd{margin-top:6px;padding-top:12px;border-top:1px solid rgba(255,255,255,.15)}
+.inv .crowd-bar{display:flex;height:40px;border-radius:10px;overflow:hidden;background:var(--line,#333)}
+.inv .crowd-bar span{display:flex;align-items:center;justify-content:center;color:#0b0f1e;font-weight:800;font-size:1rem;white-space:nowrap;overflow:hidden;transition:flex .6s ease}
+/* 비밀 찌라시(폰) */
+.inv .tip{border:1px dashed var(--accent);background:rgba(255,196,61,.08);border-radius:12px;padding:10px 12px;font-size:.95rem;line-height:1.4}
+.inv .tip b.tag{color:var(--accent);display:block;font-size:.8rem;letter-spacing:.04em;margin-bottom:2px}
+.inv .boss-s{font-size:.92rem;line-height:1.4;background:var(--panel);border-radius:12px;padding:10px 12px}
+/* 회장님 믿음 투표 · 인터뷰 카드(운영자) */
+.inv .vote-bar{display:flex;height:48px;border-radius:12px;overflow:hidden;font-weight:800;font-size:1.1rem}
+.inv .vote-bar span{display:flex;align-items:center;justify-content:center;white-space:nowrap;overflow:hidden;padding:0 10px;transition:flex .6s ease;min-width:0}
+.inv .vote-bar .y{background:var(--up);color:#fff} .inv .vote-bar .n{background:var(--down);color:#fff}
+.inv .ivs{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.inv .iv{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;display:flex;flex-direction:column;gap:4px}
+.inv .iv-nm{font-family:var(--f-display);font-size:clamp(1.8rem,4vw,2.8rem);line-height:1.1;overflow-wrap:anywhere}
