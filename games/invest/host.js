@@ -2,8 +2,10 @@
 // mount(el, ctx) → unmount 함수. ctx = { db, fs, gameId, joinUrl? }
 // 진행: 로비 → (라운드마다) 뉴스·토의(찌라시, 군중 포지션) → [운영자 선택: 프리장 20초 시초 주문 | 바로 본장]
 //       → (모두 시초 주문하면 5초 카운트다운) → 본장 30초(15초째 속보로 30초 정지·토의) → 자동 마감·결과(임삼성 조언 적중/헛다리, 찌라시 진위) → … → 최종(TOP 5, 우승 확정)
-import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS, MARKET_WALL, preOf, FLASH_SECONDS, SLIDER_LOCK_SECONDS, TOP_N, BOSS_TAG, ALL_IN_SECONDS, tickAt, flashLeft, cashOf, moveOf, pricePath, valueAt, indexSeries,
-  toMs, won, pct, cls, arrow, esc, rankList, lineChart, loadCss } from './data.js';
+// 캐시 피하기: 운영·참가 화면이 host.js?v=… 로 불러오면 data.js·css 도 같은 v 로 새로 받음(예전 코드가 섞이지 않게)
+const V = new URL(import.meta.url).search;
+const { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS, MARKET_WALL, preOf, FLASH_SECONDS, SLIDER_LOCK_SECONDS, TOP_N, BOSS_TAG, ALL_IN_SECONDS, tickAt, flashLeft, cashOf, moveOf, pricePath, valueAt, indexSeries,
+  toMs, won, pct, cls, arrow, esc, rankList, lineChart, loadCss } = await import('./data.js' + V);
 import { watchWinners, pickWinner, otherGameTitle, confirmWinner, clearWinner } from '../../shared/winners.js';
 
 const GAME = 'invest';
@@ -14,7 +16,7 @@ const T = MARKET_SECONDS, PRE = PRE_SECONDS, W = MARKET_WALL;
 
 export function mount(el, ctx) {
   const { db, fs } = ctx;
-  loadCss(new URL('./invest.css', import.meta.url).href);
+  loadCss(new URL('./invest.css' + V, import.meta.url).href);
 
   const roomRef = fs.doc(db, 'rooms', GAME);
   const portCol = fs.collection(db, 'rooms', GAME, 'portfolios');
@@ -42,7 +44,7 @@ export function mount(el, ctx) {
     const key = room.runId + '_' + room.round;
     if (key !== tradeKey) {
       unTrades && unTrades(); trades = []; tradeKey = key;
-      unTrades = fs.onSnapshot(tradeCol(room.runId, room.round), s => { trades = s.docs.map(d => d.data()); render(); });
+      unTrades = fs.onSnapshot(tradeCol(room.runId, room.round), s => { trades = s.docs.map(d => d.data()); allIn(); render(); });
       unVotes && unVotes(); votes = [];
       unVotes = fs.onSnapshot(voteCol(room.runId, room.round), s => { votes = s.docs.map(d => d.data()); render(); });
     }
@@ -63,10 +65,13 @@ export function mount(el, ctx) {
   }, 1000);
 
   // 프리장에서 모두 시초 주문을 내면 ALL_IN_SECONDS 초 뒤 본장 시작 (프리장 길이 preSec 을 줄임 → 폰도 같이 따라옴)
-  function allIn() {
+  const orderedCount = () => new Set(trades.map(t => t.pid).filter(id => ports[id])).size;
+  // force: 운영자가 '5초 뒤 본장' 버튼을 누른 경우 (안 들어온 사람이 있어도 바로 카운트다운)
+  function allIn(force) {
     if (!isPre() || ui.allIn === tradeKey || !room.marketStartMs) return;
-    const n = Object.keys(ports).length, ordered = new Set(trades.map(t => t.pid)).size;
-    if (!n || ordered < n || -elapsedMs() <= (ALL_IN_SECONDS + 0.5) * 1000) return;
+    const n = Object.keys(ports).length, ordered = orderedCount();
+    if (!force && (!n || ordered < n)) return;
+    if (-elapsedMs() <= (ALL_IN_SECONDS + 0.5) * 1000) return;
     ui.allIn = tradeKey;
     const preSec = Math.ceil((Date.now() - room.marketStartMs) / 1000) + ALL_IN_SECONDS;
     fs.updateDoc(roomRef, { preSec }).catch(() => { ui.allIn = ''; });
@@ -199,9 +204,10 @@ export function mount(el, ctx) {
     // 라운드를 열면 먼저 뉴스·토의 화면. 운영자가 프리장(시초 주문)을 열지, 바로 본장을 열지 고름
     const openRound = r => go({ phase: 'news', round: r, newsStartMs: Date.now(), marketStart: null, marketStartMs: null });
     if (a === 'start') openRound(0);
-    else if (a === 'open-pre') go({ phase: 'market', preSec: PRE, marketStart: ts(), marketStartMs: Date.now() });
+    else if (a === 'open-pre') (ui.allIn = '', go({ phase: 'market', preSec: PRE, marketStart: ts(), marketStartMs: Date.now() }));
     else if (a === 'open-now') go({ phase: 'market', preSec: 0, marketStart: ts(), marketStartMs: Date.now() });
     else if (a === 'settle') settle();
+    else if (a === 'go-now') { allIn(true); render(); }
     else if (a === 'next') room.round >= ROUNDS.length - 1 ? go({ phase: 'final' }) : openRound(room.round + 1);
     else if (a === 'unsettle') unsettle();
     else if (a === 'back-reveal') go({ phase: 'reveal' });
@@ -263,7 +269,9 @@ export function mount(el, ctx) {
         `<button class="btn primary" data-a="open-pre" ${busy}>프리장 열기 (${PRE}초 시초 주문 → 본장)</button>`;
       if (room.phase === 'market') {
         const over = elapsedMs() >= W * 1000;
-        btns = `<button class="btn primary" data-a="settle" ${over && !ui.busy ? '' : 'disabled'}>${over ? '마감 · 결과 공개' : isPre() ? '프리장 진행 중…' : flashNow() ? '속보! 장 일시 정지…' : '본장 진행 중…'}</button>`;
+        const canGo = isPre() && ui.allIn !== tradeKey && -elapsedMs() > (ALL_IN_SECONDS + 0.5) * 1000;
+        btns = (canGo ? `<button class="btn" data-a="go-now">${ALL_IN_SECONDS}초 뒤 본장 시작</button>` : '') +
+          `<button class="btn primary" data-a="settle" ${over && !ui.busy ? '' : 'disabled'}>${over ? '마감 · 결과 공개' : isPre() ? '프리장 진행 중…' : flashNow() ? '속보! 장 일시 정지…' : '본장 진행 중…'}</button>`;
       }
       if (room.phase === 'reveal') {
         const done = ui.revealed > ASSETS.length;
@@ -334,17 +342,17 @@ export function mount(el, ctx) {
   function vNews() { // 라운드 시작: 뉴스를 띄워 두고 토의. 운영자가 프리장 또는 바로 본장을 엶
     const r = ROUNDS[room.round];
     return layout(`
-      <div class="eyebrow">라운드 ${room.round + 1} / ${ROUNDS.length} · 뉴스 · 토의 시간</div>
+      <div class="row" style="justify-content:space-between;gap:8px 16px"><div class="eyebrow">라운드 ${room.round + 1} / ${ROUNDS.length} · 뉴스 · 토의 시간</div>
+        <b class="talk-line">💬 작전 회의! 폰마다 <span style="color:var(--accent)">다른</span> 비밀 찌라시를 옆 사람과 맞춰 보세요</b></div>
       ${r.double ? doubleBanner() : ''}
       <article class="news"><div class="when">${r.when}</div><h2>${r.title}</h2><ul>${r.bullets.map(b => `<li>${b}</li>`).join('')}</ul></article>
       ${bossHtml(r)}
-      ${votePanel(r, false)}
-      <div class="card talk"><b>💬 작전 회의! 폰마다 <span style="color:var(--accent)">다른</span> 비밀 찌라시를 옆 사람과 맞춰 보세요.</b><span class="muted">폰에서 비율을 미리 정해 둘 수 있어요.</span></div>`, totalSide());
+      ${votePanel(r, false)}`, totalSide());
   }
 
   function vPre() {
     const r = ROUNDS[room.round], left = Math.ceil(-elapsedMs() / 1000);
-    const ordered = new Set(trades.map(t => t.pid)).size, n = Object.keys(ports).length, p = n ? Math.round(ordered / n * 100) : 0;
+    const ordered = orderedCount(), n = Object.keys(ports).length, p = n ? Math.round(ordered / n * 100) : 0;
     const all = n > 0 && ordered >= n;
     return layout(`
       <div class="eyebrow">라운드 ${room.round + 1} / ${ROUNDS.length} · 프리장${r.double ? ' · 더블 찬스 ×2' : ''}</div>

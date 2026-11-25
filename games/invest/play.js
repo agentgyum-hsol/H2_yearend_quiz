@@ -4,9 +4,11 @@
 //        → 본장 30초(갈아탈 때마다 슬라이더 잠김, 15초째 속보로 30초 정지·토의) → 결과(찌라시 진위)
 // 주문: 슬라이더에서 손 떼고 3초 동안 안 건드리면 자동 주문. 버튼을 누르면 바로 주문.
 // 가격 흐름은 폰에서 직접 계산(서버 읽기 없음). 비율은 종목별 슬라이더로 정함.
-import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS, MARKET_WALL, preOf, FLASH_SECONDS, SLIDER_LOCK_SECONDS, TRADE_COOLDOWN_MS, TOP_N, BOSS_TAG, AUTO_ORDER_MS, ALL_IN_SECONDS,
+// 캐시 피하기: 운영·참가 화면이 host.js?v=… 로 불러오면 data.js·css 도 같은 v 로 새로 받음(예전 코드가 섞이지 않게)
+const V = new URL(import.meta.url).search;
+const { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS, MARKET_WALL, preOf, FLASH_SECONDS, SLIDER_LOCK_SECONDS, TRADE_COOLDOWN_MS, TOP_N, BOSS_TAG, AUTO_ORDER_MS, ALL_IN_SECONDS,
   tickAt, flashLeft, moveOf, tipFor, pricePath, valueAt,
-  cashOf, sameAlloc, toMs, won, pct, cls, arrow, esc, lineChart, loadCss } from './data.js';
+  cashOf, sameAlloc, toMs, won, pct, cls, arrow, esc, lineChart, loadCss } = await import('./data.js' + V);
 
 const GAME = 'invest';
 const T = MARKET_SECONDS, W = MARKET_WALL;
@@ -14,7 +16,7 @@ const STEP = 5;
 
 export function mount(el, ctx) {
   const { db, fs, player } = ctx;
-  loadCss(new URL('./invest.css', import.meta.url).href);
+  loadCss(new URL('./invest.css' + V, import.meta.url).href);
 
   const roomRef = fs.doc(db, 'rooms', GAME);
   const myRef = fs.doc(db, 'rooms', GAME, 'portfolios', player.id);
