@@ -199,7 +199,9 @@ export function lineChart(series, len, upto, { h = 160, base = 1 } = {}) {
 }
 
 export function loadCss(href) {
-  if ([...document.querySelectorAll('link[data-inv]')].some(l => l.href === href)) return;
+  const old = [...document.querySelectorAll('link[data-inv]')];
+  if (old.some(l => l.href === href)) return;
+  old.forEach(l => l.remove()); // 예전 버전 css 는 치움
   const l = document.createElement('link');
   l.rel = 'stylesheet'; l.href = href; l.dataset.inv = '1';
   document.head.appendChild(l);

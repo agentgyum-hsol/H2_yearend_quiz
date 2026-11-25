@@ -404,7 +404,7 @@ fs.onSnapshot(fs.doc(db, "rooms", "current"), async snap => {
   if (id) closeWinners();
   if (!id) return;
   try {
-    const mod = await import(`../games/${id}/host.js`);
+    const mod = await import(`../games/${id}/host.js?v=${Date.now().toString(36)}`);
     if (mountedId !== id) return;
     unmount = mod.mount(el, { db, fs, gameId: id, eventId: EVENT_ID, mock, joinUrl: joinUrl.href }) || null;
   } catch (e) {
