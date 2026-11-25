@@ -7,3 +7,7 @@ export const GAMES = [
   { id: "similar", title: "H2맨틀", sub: "비밀 단어와 얼마나 가까운지 유사도로 추리하기", emoji: "🌡️🔤" },
 ];
 export const EVENT_ID = "main";
+
+// 진행 순서: 운영 화면 게임 목록, 메인 순위, 우승자 발표가 모두 이 순서를 따릅니다.
+export const ORDER = ["similar", "emoji", "invest"];
+GAMES.sort((a, b) => (ORDER.indexOf(a.id) + 1 || 99) - (ORDER.indexOf(b.id) + 1 || 99));

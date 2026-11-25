@@ -64,6 +64,7 @@
 import { connect } from "../shared/db.js";
 import { EVENT_ID } from "../shared/games.js";
 import { EVENT_NAME } from "../config.js";
+import { watchTutorial } from "../shared/tutorial/tutorial.js";
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -71,6 +72,8 @@ $("brand").innerHTML = `${esc(EVENT_NAME)} <span>퀴즈</span>`;
 
 const { db, fs, uid, mock, onConn } = await connect();
 $("mockBanner").hidden = !mock;
+// 진행자가 게임 설명을 띄우면 게임 화면 위에 같은 단계를 보여 줌
+watchTutorial({ db, fs, uid });
 // 연결이 2초 넘게 끊겨 있으면 위에 안내 (잠깐 끊겼다 바로 붙는 건 표시하지 않음)
 let connTimer = null;
 onConn(ok => {
