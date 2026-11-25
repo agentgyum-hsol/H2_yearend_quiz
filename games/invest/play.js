@@ -1,9 +1,10 @@
 // 반도체왕 임삼성: 참가자(휴대폰) 화면
 // mount(el, ctx) → unmount 함수. ctx = { db, fs, player: { id, nick } }
 // 라운드: 뉴스·토의(나만의 비밀 찌라시, 비율 미리 정하기) → (운영자가 고르면) 프리장 20초 시초 주문
-//        → 본장 30초(갈아탈 때마다 슬라이더 잠김, 15초째 속보로 15초 정지·토의) → 결과(찌라시 진위)
+//        → 본장 30초(갈아탈 때마다 슬라이더 잠김, 15초째 속보로 30초 정지·토의) → 결과(찌라시 진위)
+// 주문: 슬라이더에서 손 떼고 3초 동안 안 건드리면 자동 주문. 버튼을 누르면 바로 주문.
 // 가격 흐름은 폰에서 직접 계산(서버 읽기 없음). 비율은 종목별 슬라이더로 정함.
-import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS, MARKET_WALL, preOf, FLASH_SECONDS, SLIDER_LOCK_SECONDS, TRADE_COOLDOWN_MS, TOP_N,
+import { ASSETS, INVEST, ROUNDS, ZERO, START_MONEY, MARKET_SECONDS, PRE_SECONDS, MARKET_WALL, preOf, FLASH_SECONDS, SLIDER_LOCK_SECONDS, TRADE_COOLDOWN_MS, TOP_N, BOSS_TAG, AUTO_ORDER_MS, ALL_IN_SECONDS,
   tickAt, flashLeft, moveOf, tipFor, pricePath, valueAt,
   cashOf, sameAlloc, toMs, won, pct, cls, arrow, esc, lineChart, loadCss } from './data.js';
 
@@ -23,7 +24,7 @@ export function mount(el, ctx) {
   const ts = () => (fs.serverTimestamp ? fs.serverTimestamp() : Date.now());
 
   let room = null, mine = null, myTrades = [], key = '', unTr = null, unVote = null, myVote = null, winner = null;
-  let draft = null, offset = 0, lastSent = 0, lockUntil = 0, busy = false, err = '', dragging = false, pending = false, stageKey = '';
+  let autoAt = 0, draft = null, offset = 0, lastSent = 0, lockUntil = 0, busy = false, err = '', dragging = false, pending = false, stageKey = '';
 
   el.innerHTML = '';
   const root = document.createElement('div');
@@ -65,6 +66,14 @@ export function mount(el, ctx) {
   });
   const unWin = fs.onSnapshot(winRef, s => { winner = s.exists() ? s.data() : null; render(); });
   const liveTimer = setInterval(() => { if (room?.phase === 'market') live(); }, 500);
+  // 자동 주문: 손 뗀 뒤 AUTO_ORDER_MS 동안 그대로면 주문. 뉴스 화면에서 정해 둔 비율은 장이 열리자마자 들어감.
+  const autoTimer = setInterval(() => {
+    if (!autoAt) return;
+    const dirty = draft && !sameAlloc(draft, holding());
+    if (!dirty) { autoAt = 0; paintSend(); return; }
+    if (!dragging && Date.now() >= autoAt && canOrder() && !busy && !lockLeft()) { autoAt = 0; order(cur()); return; }
+    paintSend();
+  }, 200);
   // 폰 화면이 꺼졌다 켜지면 바로 다시 그림 (시계는 폰에서 계산하므로 서버를 기다리지 않음)
   const onVis = () => { if (document.visibilityState === 'visible') render(); };
   document.addEventListener('visibilitychange', onVis);
@@ -76,6 +85,7 @@ export function mount(el, ctx) {
   const startMs = () => { const o = openMs(); return o == null ? null : o + pre() * 1000; };
   const elapsed = () => { const s = startMs(); return s == null ? -pre() * 1000 : Date.now() + offset - s; }; // 음수면 프리장
   const isPre = () => room?.phase === 'market' && elapsed() < 0;
+  const preLeft = () => Math.ceil(-elapsed() / 1000);
   const tick = () => tickAt(Math.max(0, elapsed()));
   const closed = () => room?.phase === 'market' && elapsed() >= W * 1000;
   const flash = () => (room?.phase === 'market' && !isPre() && !closed() ? flashLeft(elapsed()) : 0);
@@ -108,7 +118,7 @@ export function mount(el, ctx) {
     try {
       const id = `${player.id}_${Date.now().toString(36)}`;
       await fs.setDoc(fs.doc(tradeCol(room.runId, room.round), id), { pid: player.id, nick: player.nick, alloc: { ...ZERO, ...alloc }, at: ts(), atMs: Date.now() });
-      draft = null;
+      draft = null; autoAt = 0;
       if (!isPre()) lockUntil = Date.now() + SLIDER_LOCK_SECONDS * 1000;
     } catch (e) { err = '주문하지 못했어요. 다시 눌러 주세요.'; }
     busy = false; render();
@@ -141,28 +151,43 @@ export function mount(el, ctx) {
     });
     const cv = stage.querySelector('[data-pv="cash"]'); if (cv) cv.textContent = c + '%';
     const bar = stage.querySelector('[data-r="draftbar"]'); if (bar) bar.innerHTML = abarInner(a);
-    const send = stage.querySelector('[data-a="send"]');
-    if (send) send.disabled = !(canOrder() && !busy && !lockLeft() && draft && !sameAlloc(draft, holding()));
+    paintSend();
     const undo = stage.querySelector('[data-a="undo"]'); if (undo) undo.hidden = !(draft && !sameAlloc(draft, holding()));
   }
+  // 주문 버튼 글자: 자동 주문까지 남은 초를 보여 줌
+  function sendLabel() {
+    const dirty = draft && !sameAlloc(draft, holding());
+    if (room.phase === 'news') return dirty ? '장이 열리면 이 비율로 자동 주문' : '비율을 정해 두면 장이 열릴 때 자동 주문';
+    const base = isPre() ? '시초 주문' : '주문';
+    if (!dirty) return `슬라이더를 움직이면 ${AUTO_ORDER_MS / 1000}초 뒤 자동 ${base}`;
+    if (dragging || !autoAt) return `지금 ${base}`;
+    return `지금 ${base} · ${Math.max(1, Math.ceil((autoAt - Date.now()) / 1000))}초 뒤 자동`;
+  }
+  function paintSend() {
+    const send = stage.querySelector('[data-a="send"]'); if (!send) return;
+    send.disabled = !(canOrder() && !busy && !lockLeft() && draft && !sameAlloc(draft, holding()));
+    const t = sendLabel(); if (send.textContent !== t) send.textContent = t;
+    send.classList.toggle('auto', !!autoAt && !dragging);
+  }
+  const armAuto = () => { autoAt = draft && !sameAlloc(draft, holding()) ? Date.now() + AUTO_ORDER_MS : 0; paintSend(); };
   root.addEventListener('input', e => {
     const r = e.target.closest('input[type=range][data-id]'); if (!r) return;
-    setSlider(r.dataset.id, +r.value); paintSliders();
+    setSlider(r.dataset.id, +r.value); autoAt = 0; paintSliders();
   });
-  const endDrag = () => { if (!dragging) return; dragging = false; if (pending) { pending = false; render(); } };
+  const endDrag = () => { if (!dragging) return; dragging = false; armAuto(); if (pending) { pending = false; render(); } };
   root.addEventListener('pointerdown', e => { if (e.target.closest('input[type=range]')) dragging = true; });
   root.addEventListener('pointerup', endDrag); root.addEventListener('pointercancel', endDrag);
-  root.addEventListener('change', e => { if (e.target.closest('input[type=range]')) endDrag(); });
+  root.addEventListener('change', e => { if (e.target.closest('input[type=range]')) { if (dragging) endDrag(); else armAuto(); } });
   root.addEventListener('click', e => {
     const t = e.target.closest('[data-a]'); if (!t || t.disabled) return;
     const { a } = t.dataset;
-    if (a === 'send') order(cur());
-    else if (a === 'undo') { draft = null; render(true); }
+    if (a === 'send') { autoAt = 0; order(cur()); }
+    else if (a === 'undo') { draft = null; autoAt = 0; render(true); }
     else if (a === 'vote') {
       const trust = t.dataset.v === '1'; myVote = trust; render();
       fs.setDoc(voteRef(room.runId, room.round), { pid: player.id, nick: player.nick, trust, at: ts() }).catch(() => { err = '투표하지 못했어요. 다시 눌러 주세요.'; render(); });
     }
-    else if (a === 'cash') { if (!lockLeft()) { draft = { ...ZERO }; render(true); } }
+    else if (a === 'cash') { if (!lockLeft()) { draft = { ...ZERO }; render(true); armAuto(); } }
   });
 
   /* ---------- 렌더 ---------- */
@@ -180,7 +205,6 @@ export function mount(el, ctx) {
   function controls() {
     const a = cur(), c = cashOf(a), hold = holding(), dirty = draft && !sameAlloc(draft, hold);
     const pre = isPre(), news = room.phase === 'news';
-    const label = news ? '장이 열리면 주문할 수 있어요' : pre ? '시초 주문 넣기' : '이 비율로 주문';
     const lk = lockLeft(), dis = lk ? 'disabled' : '';
     return `<div class="sliders${lk ? ' locked' : ''}">
       ${lk ? `<div class="lock" role="status">🔒 거래 수수료: <b class="num" data-live="lock">${Math.ceil(lk / 1000)}초</b> 뒤 다시 조정</div>` : ''}
@@ -193,7 +217,7 @@ export function mount(el, ctx) {
       <div class="srow" style="--c:${ASSETS[4].color}"><span class="sname"><span class="dot" style="background:${ASSETS[4].color}"></span>현금</span>
         <div class="abar" data-r="draftbar">${abarInner(a)}</div><span class="spv num" data-pv="cash">${c}%</span></div>
       <div class="row" style="gap:8px;flex-wrap:nowrap">
-        <button class="btn primary" style="flex:1;padding:14px" data-a="send" ${canOrder() && !busy && !lk && dirty ? '' : 'disabled'}>${label}</button>
+        <button class="btn primary" style="flex:1;padding:14px" data-a="send" ${canOrder() && !busy && !lk && dirty ? '' : 'disabled'}>${sendLabel()}</button>
         <button class="btn ghost" data-a="undo" ${dirty ? '' : 'hidden'}>되돌리기</button></div>
     </div>`;
   }
@@ -206,14 +230,15 @@ export function mount(el, ctx) {
     const body = { lobby: vLobby, news: vNews, market: vMarket, reveal: vReveal, final: vFinal }[room.phase] || vLobby;
     stageKey = phaseKey();
     stage.innerHTML = e + header() + body();
+    paintSend();
   }
   // 장 중 0.5초마다: 차트·시계·내 자산만 바꿔 끼움 (슬라이더와 버튼은 그대로 두어 조작이 끊기지 않게)
   // 화면 구조가 바뀌는 시점(프리장·속보·잠금·마감)을 구분하는 키
-  const phaseKey = () => room.phase + (isPre() ? 'pre' : '') + (flash() ? 'flash' : '') + (lockLeft() ? 'lock' : '') + (closed() ? 'closed' : '');
+  const phaseKey = () => room.phase + (isPre() ? 'pre' + (preLeft() <= ALL_IN_SECONDS ? 'cd' : '') : '') + (flash() ? 'flash' : '') + (lockLeft() ? 'lock' : '') + (closed() ? 'closed' : '');
   function live() {
     if (phaseKey() !== stageKey) { render(); return; }
     const set = (k, h) => { const n = stage.querySelector(`[data-live="${k}"]`); if (n) n.innerHTML = h; };
-    if (isPre()) { set('clock', `${Math.ceil(-elapsed() / 1000)}<span>초</span>`); return; }
+    if (isPre()) { set('clock', `${preLeft()}<span>초</span>`); set('cd', preLeft()); return; }
     const lk = lockLeft(); if (lk) set('lock', Math.ceil(lk / 1000) + '초');
     const fl = flash(); if (fl) set('flash', fl + '초');
     const v = liveValue(), tk = tick(), left = T - tk;
@@ -232,12 +257,12 @@ export function mount(el, ctx) {
       <div class="card stack" style="gap:8px"><b>규칙</b>
         <ul class="rules">
           <li>모두 <b>${won(START_MONEY)}</b>으로 시작, ${ROUNDS.length}라운드 뒤 자산 1등이 반도체왕</li>
-          <li>라운드마다 <b>뉴스·토의</b>: 내 폰에만 뜨는 <b>비밀 찌라시</b>는 진짜일 수도, 가짜일 수도! 옆 사람과 맞춰 보세요</li>
+          <li>라운드마다 <b>뉴스·토의</b>: 폰마다 <b>다른 비밀 찌라시</b>가 와요. 진짜일 수도, 가짜일 수도! 옆 사람과 맞춰 보세요</li>
           <li>운영자가 열면 <b>${PRE_SECONDS}초 프리장</b>: 본장 시작 가격으로 시초 주문</li>
           <li><b>${T}초 본장</b>: 슬라이더로 비율을 바꿔 주문</li>
           <li>거래 수수료: 본장에서 주문하면 슬라이더 <b>${SLIDER_LOCK_SECONDS}초 잠김</b></li>
           <li>본장 중간 <b>추가 속보</b>: 장이 ${FLASH_SECONDS}초 멈추고 토의 타임. 큰 화면에 모두의 투자 비율 공개</li>
-          <li>임삼성 회장의 조언은 <b>가끔 헛다리</b></li>
+          <li>슬라이더에서 손 떼고 <b>${AUTO_ORDER_MS / 1000}초</b> 지나면 자동 주문 (버튼으로 바로 주문도 OK)</li>
           <li>마지막 라운드는 등락 2배 <b>더블 찬스</b></li>
           <li>자산이 같으면 더 빨리 결정한 사람이 승리</li>
         </ul></div></div>`;
@@ -248,12 +273,12 @@ export function mount(el, ctx) {
       ${r.double ? '<div class="status" style="color:var(--accent)">더블 찬스! 이번 라운드는 등락 2배</div>' : ''}
       <div class="news-s"><div class="num muted" style="font-size:.85rem">${r.when}</div><h2>${r.title}</h2><ul>${r.bullets.map(b => `<li>${b}</li>`).join('')}</ul></div>
       ${tipBox()}
-      <div class="boss-s stack" style="gap:8px"><div><b>임삼성 회장</b> “${esc(r.boss)}”</div>
+      <div class="boss-s stack" style="gap:8px"><div><b>임삼성 회장</b> <span class="boss-tag">${BOSS_TAG}</span><br>“${esc(r.boss)}”</div>
         <div class="row" style="gap:8px;flex-wrap:nowrap">
-          <button class="btn ${myVote === true ? 'primary' : 'ghost'}" style="flex:1" data-a="vote" data-v="1" ${room.runId ? '' : 'disabled'}>👍 믿는다</button>
-          <button class="btn ${myVote === false ? 'primary' : 'ghost'}" style="flex:1" data-a="vote" data-v="0" ${room.runId ? '' : 'disabled'}>🙅 안 믿는다</button></div>
-        <span class="muted" style="font-size:.85rem">${myVote == null ? '큰 화면에 믿는 사람 비율이 떠요' : '투표 완료! 바꿀 수 있어요'}</span></div>
-      <ul class="tips"><li>💬 지금은 토의 시간! 찌라시를 옆 사람과 맞춰 보세요</li><li>비율을 미리 정해 두고, 장이 열리면 주문 버튼만 누르세요</li><li>주문하지 않으면 지난 라운드 비율 그대로</li></ul>
+          <button class="btn ${myVote === true ? 'primary' : 'ghost'}" style="flex:1" data-a="vote" data-v="1" ${room.runId ? '' : 'disabled'}>👍 따른다</button>
+          <button class="btn ${myVote === false ? 'primary' : 'ghost'}" style="flex:1" data-a="vote" data-v="0" ${room.runId ? '' : 'disabled'}>🙅 안 따른다</button></div>
+        <span class="muted" style="font-size:.85rem">${myVote == null ? '큰 화면에 따르는 사람 비율이 떠요' : '투표 완료! 바꿀 수 있어요'}</span></div>
+      <ul class="tips"><li>💬 지금은 토의 시간! 찌라시를 옆 사람과 맞춰 보세요</li><li>비율을 미리 정해 두면 장이 열리자마자 자동 주문돼요</li><li>주문하지 않으면 지난 라운드 비율 그대로</li></ul>
       ${controls()}
     </div>`;
   }
@@ -268,7 +293,8 @@ export function mount(el, ctx) {
       return `<div class="stack" style="gap:12px">
         <div class="row" style="justify-content:space-between;align-items:center">
           <div style="flex:1;min-width:0"><div class="eyebrow" style="color:var(--accent)">프리장 · 시초 주문</div><b style="font-size:1rem;line-height:1.3">${r.title}${r.double ? ' <span style="color:var(--accent)">×2</span>' : ''}</b></div>
-          <span class="clock num" data-live="clock">${Math.ceil(-elapsed() / 1000)}<span>초</span></span></div>
+          <span class="clock num" data-live="clock">${preLeft()}<span>초</span></span></div>
+        ${preLeft() <= ALL_IN_SECONDS ? `<div class="p-cd" aria-live="assertive">본장 시작까지 <b class="num" data-live="cd">${preLeft()}</b></div>` : ''}
         <ul class="news-b">${r.bullets.map(b => `<li>${b}</li>`).join('')}</ul>
         ${tipBox()}
         <ul class="tips"><li>프리장 주문은 본장 시작 가격으로 체결</li><li>본장에선 주문할 때마다 슬라이더 ${SLIDER_LOCK_SECONDS}초 잠김</li></ul>
@@ -313,7 +339,7 @@ export function mount(el, ctx) {
   }
 
   return function unmount() {
-    clearInterval(liveTimer); document.removeEventListener('visibilitychange', onVis);
+    clearInterval(liveTimer); clearInterval(autoTimer); document.removeEventListener('visibilitychange', onVis);
     unRoom(); unMine(); unWin(); unTr && unTr(); unVote && unVote(); el.innerHTML = '';
   };
 }

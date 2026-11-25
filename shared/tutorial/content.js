@@ -164,6 +164,7 @@ export const INVEST_PRACTICE = {
 async function investSteps(g) {
   const D = await load("../../games/invest/data.js");
   const START = D.START_MONEY ?? 1e8, R = D.ROUNDS?.length ?? 5;
+  const ALLIN = D.ALL_IN_SECONDS ?? 5, AUTO = (D.AUTO_ORDER_MS ?? 3000) / 1000, TAG = D.BOSS_TAG || "반도체 30년 외길";
   const PRE = D.PRE_SECONDS ?? 20, MK = D.MARKET_SECONDS ?? 30, FA = D.FLASH_AT ?? 15, FS = D.FLASH_SECONDS ?? 5, LOCK = D.SLIDER_LOCK_SECONDS ?? 3;
   const won = D.won || (v => Math.round(v / 1e4).toLocaleString("ko-KR") + "만원");
   const assets = D.ASSETS || [];
@@ -174,12 +175,16 @@ async function investSteps(g) {
       phone: li([`${won(START)}으로 시작, ${R}라운드`, "마지막 자산 1등이 우승"]) },
     { title: "투자할 수 있는 것", big: () => `<div class="tu-assets">${assets.map(a => `<div style="--c:${a.color}"><b>${esc(a.name)}</b><small>${esc(a.desc)}</small></div>`).join("")}</div>`,
       phone: `<div class="tu-assets sm">${assets.map(a => `<div style="--c:${a.color}"><b>${esc(a.name)}</b></div>`).join("")}</div>` },
-    { title: "한 라운드는 이렇게", big: () => `<div class="tu-flow"><div><b>📰 뉴스</b><small>시간 제한 없이 함께 토의. 진행자가 넘겨요</small></div><div><b>⏳ 프리장 ${PRE}초</b><small>진행자가 열면 미리 주문. 바로 본장일 수도!</small></div><div><b>📈 본장 ${MK}초</b><small>차트 보며 비율 변경</small></div><div><b>⚡ 속보</b><small>본장 ${FA}초째, 장이 ${FS}초 멈추고 토의. 모두의 평균 투자 비율 공개</small></div><div><b>🧾 결과</b><small>순위, 찌라시 진위, 수익 1등·꼴등 인터뷰</small></div></div>`,
+    { title: "한 라운드는 이렇게", big: () => `<div class="tu-flow"><div><b>📰 뉴스</b><small>시간 제한 없이 함께 토의. 진행자가 넘겨요</small></div><div><b>⏳ 프리장 ${PRE}초</b><small>진행자가 열면 미리 주문. 모두 내면 ${ALLIN}초 뒤 바로 본장!</small></div><div><b>📈 본장 ${MK}초</b><small>차트 보며 비율 변경</small></div><div><b>⚡ 속보</b><small>본장 ${FA}초째, 장이 ${FS}초 멈추고 토의. 모두의 평균 투자 비율 공개</small></div><div><b>🧾 결과</b><small>순위, 찌라시 진위, 수익 1등·꼴등 인터뷰</small></div></div>`,
       phone: li(["뉴스·토의 → (프리장) → 본장(실시간) → 결과", "프리장은 진행자가 열 때만 있어요", `본장 중간에 속보가 뜨면 장이 ${FS}초 멈춰요. 이때 토의!`]) },
-    { title: "슬라이더로 비율을 정해요", big: () => `${li(["종목마다 슬라이더로 <b>몇 %</b>를 넣을지 정해요 (5% 단위)", "넣지 않은 나머지는 <b>현금</b>. 라운드마다 이자 +2%", `본장에서 주문하면 슬라이더가 <b>${LOCK}초 잠겨요</b> (거래 수수료)`, "마지막 라운드는 등락 2배 <b>더블 찬스</b>"])}`,
-      phone: li(["종목별 슬라이더로 비율 정하기, 나머지는 현금", `본장 주문 뒤 ${LOCK}초 잠김`, "마지막 라운드는 등락 2배"]) },
-    { title: "임삼성 조언과 비밀 찌라시", big: () => `${big("🧑‍💼💬")}${li(["뉴스마다 임삼성이 한마디 해요. 맞을 때도 있지만 <b>헛다리</b>일 때도 있어요", "뉴스 화면에서 <b>회장님을 믿을지 투표</b>해요. 결과 화면에서 누가 맞았는지 공개!", "휴대폰마다 다른 <b>비밀 찌라시</b>가 와요. 진짜도 가짜도 있으니 옆 사람과 맞춰 보세요"])}`,
-      phone: li(["임삼성 조언은 맞을 수도, 헛다리일 수도!", "회장님 믿음 투표에 참여해요", "내 폰에만 오는 비밀 찌라시, 진짜일까?"]) },
+    { title: "슬라이더로 비율을 정해요", big: () => `${li(["종목마다 슬라이더로 <b>몇 %</b>를 넣을지 정해요 (5% 단위)", `슬라이더에서 손 떼고 <b>${AUTO}초</b> 그대로 두면 <b>자동 주문</b>. 급하면 버튼으로 바로!`, "넣지 않은 나머지는 <b>현금</b>. 라운드마다 이자 +2%", `본장에서 주문하면 슬라이더가 <b>${LOCK}초 잠겨요</b> (거래 수수료)`, "마지막 라운드는 등락 2배 <b>더블 찬스</b>"])}`,
+      phone: li(["종목별 슬라이더로 비율 정하기, 나머지는 현금", `손 떼고 ${AUTO}초 지나면 자동 주문`, `본장 주문 뒤 ${LOCK}초 잠김`, "마지막 라운드는 등락 2배"]) },
+    { title: "임삼성 회장의 한마디", big: () => `${big("🧑‍💼💬")}<p class="tu-lead"><b>${esc(TAG)}</b></p>${li(["라운드마다 뉴스와 함께 임삼성 회장이 투자 방향을 콕 집어 줘요", "휴대폰으로 회장님 촉을 <b>따를지 안 따를지</b> 투표하고, 결과에서 누가 맞았는지 공개돼요"])}`,
+      phone: li(["뉴스마다 임삼성 회장의 한마디", "따를지 말지 투표해 보세요"]) },
+    { title: "🤫 찌라시는 사람마다 달라요!", big: () => `${big("📱🤫📱")}<p class="tu-lead">휴대폰마다 <b style="color:var(--gold,#ffc43d)">서로 다른 비밀 찌라시</b>가 하나씩 와요.</p>${li(["<b>옆 사람 폰에는 전혀 다른 정보</b>가 떠 있어요", "그중엔 <b>진짜도, 가짜도</b> 섞여 있어요", "내 찌라시를 보여 주고 남의 찌라시를 들어 보세요. 맞춰 볼수록 진짜가 보여요", "어느 게 진짜였는지는 라운드 결과에서 공개!"])}`,
+      phone: `<p class="tu-lead">🤫 내 찌라시는 <b>나만</b> 받아요.<br>옆 사람 폰에는 <b>다른 내용</b>이 떠요!</p>${li(["진짜도 가짜도 섞여 있어요", "주변과 맞춰 보세요"])}` },
+    { title: `속보가 뜨면 ${FS}초 토의`, big: () => `${big("⚡💬")}${li([`본장 ${FA}초째 추가 속보! 장이 <b>${FS}초</b> 멈춰요`, "이때만 큰 화면에 <b>모두의 평균 투자 비율</b>이 공개돼요", "따라갈지, 거꾸로 갈지 주변과 토의하세요"])}`,
+      phone: li([`속보가 뜨면 장이 ${FS}초 멈춰요`, "큰 화면에 모두의 투자 비율이 떠요. 토의 타임!"]) },
     { title: "연습 투자", practice: { id: "invest", phase: "play" },
       big: live => `${news}<div class="tu-live"><span class="pill">주문 ${live.docs.filter(d => d.alloc).length}명</span></div><p class="muted" style="margin:0">휴대폰 슬라이더로 비율을 정하고 '주문'을 눌러 보세요.</p>`, phone: "" },
     { title: "연습 결과", practice: { id: "invest", phase: "reveal" },

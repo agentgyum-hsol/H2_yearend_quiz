@@ -4,12 +4,15 @@ export const MARKET_SECONDS = 30;       // 라운드마다 열리는 실시간 �
 export const PRE_SECONDS = 20;          // 본장 전 프리장(시초 주문) 길이(초). 운영자가 라운드마다 열지 말지 고름
 export const TRADE_COOLDOWN_MS = 1000;  // 프리장에서 주문 사이 최소 간격
 export const FLASH_AT = 15;             // 본장 몇 초째에 추가 속보가 뜨는지 (장 시간 기준)
-export const FLASH_SECONDS = 15;        // 속보가 뜨면 장이 멈추고 토의·결정하는 시간(초)
+export const FLASH_SECONDS = 30;        // 속보가 뜨면 장이 멈추고 토의·결정하는 시간(초)
 export const SLIDER_LOCK_SECONDS = 3;   // 본장에서 주문(비율 변경)하면 슬라이더가 잠기는 시간 = 거래 수수료
 // 라운드의 프리장 길이: 운영자가 고른 값(room.preSec), 옛 기록이면 PRE_SECONDS
 export const preOf = room => (room?.preSec ?? PRE_SECONDS);
 export const MARKET_WALL = MARKET_SECONDS + FLASH_SECONDS; // 본장 실제 길이(초): 장 시간 + 속보 정지 시간
-export const TOP_N = 5;                 // 최종 화면에 공개하는 순위
+export const TOP_N = 5;
+export const BOSS_TAG = '반도체 30년 외길 · 적중률 9할'; // 임삼성 회장 소개(믿음직하게 보여야 헛다리가 반전이 됨)
+export const AUTO_ORDER_MS = 3000;     // 슬라이더에서 손 떼고 이 시간 동안 안 건드리면 자동 주문
+export const ALL_IN_SECONDS = 5;       // 프리장에서 모두 시초 주문을 내면 이 초 뒤 본장 시작                 // 최종 화면에 공개하는 순위
 
 export const ASSETS = [
   { id: 'dram', name: 'DRAM',       short: 'DRAM', color: '#2fd3c4', vol: 0.014, desc: 'PC·서버 메인 메모리. AI 서버 붐이 오면 날아오른다.' },
@@ -26,7 +29,7 @@ export const ZERO = { dram: 0, nand: 0, gold: 0, btc: 0 };
 export const ROUNDS = [
   { when: '2026년 1분기', title: 'AI 서버 대란! 빅테크, 데이터센터 투자 2배로',
     bullets: ['글로벌 빅테크 4사, 올해 AI 인프라 투자 계획 일제히 상향', '서버용 고용량 메모리 주문 폭주, 납기 6개월 이상', '한편 금값은 사상 최고가 부근에서 숨 고르기'],
-    boss: '서버에 들어가는 건 다 오른다! ...아마도?',
+    boss: '서버에 들어가는 건 다 오른다. 30년 감이 그렇게 말하고 있어!',
     move: { dram: 40, nand: 15, gold: -5, btc: 20, cash: 2 },
     shape: { dram: [0, 12, 4, 26, 40], btc: [0, -8, 6, 20] },
     flash: { title: '빅테크 1곳, 메모리 3년 장기공급 계약 전격 체결', bullets: ['계약 규모 사상 최대, 대부분 서버용 DRAM', '비트코인 채굴업체들도 AI 데이터센터로 업종 변경 바람'] },
@@ -34,7 +37,7 @@ export const ROUNDS = [
     twist: '예상대로 DRAM 독주. 초반 조정에 겁먹고 판 사람은 땅을 쳤다!' },
   { when: '2026년 2분기', title: '스마트폰 판매 3분기 연속 감소… 창고에 재고 산더미',
     bullets: ['신형 스마트폰 판매 부진, 제조사들 부품 주문 축소', '저장장치 재고가 평소의 2배까지 쌓였다는 보도', '금리 인하 기대감은 여전'],
-    boss: '폰이 안 팔리면… 폰에 들어가는 게 문제겠지?',
+    boss: '폰이 안 팔리면 폰에 들어가는 게 먼저 무너진다. 이건 확실해.',
     move: { dram: -25, nand: -35, gold: 10, btc: -10, cash: 2 },
     shape: { dram: [0, 8, -6, -25], nand: [0, -12, -18, -35], gold: [0, 4, 8, 10], btc: [0, 10, -14, -10] },
     flash: { title: '메모리 업체들 “감산은 없다” 공식 발표', bullets: ['재고가 더 쌓일 거라는 우려 확산', '불안한 투자자들, 안전자산으로 피신 조짐'] },
@@ -42,7 +45,7 @@ export const ROUNDS = [
     twist: 'NAND 직격탄! DRAM은 초반 반짝 반등이 함정이었고, 금이 피난처가 됐다.' },
   { when: '2026년 3분기', title: '비트코인 신규 ETF 승인 임박! 기대감 최고조',
     bullets: ['"승인 확률 90% 이상" 전문가 전망 쏟아져', '커뮤니티는 "이번엔 진짜 달 간다" 열기', '메모리 업황은 바닥 다지기 중'],
-    boss: '이건 무조건 비트코인이다! 승인 나면 바로 달 간다!',
+    boss: '이건 무조건 비트코인이다. 승인 나면 바로 달 간다!',
     bossWrong: true, // 헛다리: 조언과 반대로 움직임
     move: { dram: 5, nand: 0, gold: 5, btc: -20, cash: 2 },
     shape: { btc: [0, 14, 24, 8, -20], dram: [0, -4, 3, 5] },
@@ -51,7 +54,7 @@ export const ROUNDS = [
     twist: '회장님 헛다리! 승인 직전 +24%까지 갔다가 "뉴스에 팔아라"로 폭락. 꼭대기에서 판 사람이 승자!' },
   { when: '2026년 4분기', title: '지정학적 긴장 고조… 글로벌 증시 출렁',
     bullets: ['주요 해협 봉쇄 우려로 원자재 가격 급등', '각국 중앙은행, 금 매입 확대 발표', '공급망 불안에 반도체 장비 수출 일부 지연'],
-    boss: '금은 이미 꼭대기야. 이럴 때일수록 반도체 줍줍!',
+    boss: '금은 이미 꼭대기야. 이럴 때일수록 반도체를 담아라.',
     bossWrong: true,
     move: { dram: -10, nand: -5, gold: 30, btc: 35, cash: 2 },
     shape: { gold: [0, 10, 18, 30], btc: [0, -16, -10, 12, 35] },
@@ -60,7 +63,7 @@ export const ROUNDS = [
     twist: '회장님 또 헛다리! 꼭대기라던 금은 30% 더 올랐고, 반도체는 장비 수출 지연에 하락. 비트코인은 "디지털 금" 바람을 타고 역전!' },
   { when: '2027년 1분기', title: 'HBM 품귀! 메모리 슈퍼사이클 다시 온다',
     bullets: ['차세대 AI 칩 출하 본격화, 고대역폭 메모리 없어서 못 판다', '데이터센터용 대용량 SSD 수요도 급증', '긴장 완화로 안전자산 매도세'],
-    boss: '마지막 더블 찬스! 반도체왕의 촉을 믿어라!',
+    boss: '마지막 더블 찬스! 메모리가 판을 뒤집는다. 내 촉을 믿어!',
     move: { dram: 80, nand: 40, gold: -10, btc: -15, cash: 2 },
     shape: { dram: [0, -8, 18, 42, 80], nand: [0, 8, 22, 40], btc: [0, 10, -4, -15] },
     double: true, // 더블 찬스: 투자 종목 흐름과 등락 2배 (현금 이자는 그대로)
