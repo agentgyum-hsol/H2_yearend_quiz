@@ -18,9 +18,12 @@ export async function loadTutorial(gameId) {
   const make = { similar: similarSteps, emoji: emojiSteps, invest: investSteps }[gameId];
   const steps = make ? await make(g) : [];
   steps.push({
-    title: "준비 끝!",
-    big: () => `${big("🎉")}<p class="tu-lead">연습은 점수에 들어가지 않아요.<br>이제 진짜 <b>${esc(g.title)}</b> 시작합니다!</p>`,
-    phone: `<p class="tu-lead">연습 끝! 곧 진짜 게임이 시작돼요.</p>`,
+    // 마지막 쪽: 게임 시작 전 대기실. 입장한 사람이 실시간으로 보이고, 운영자가 넘기면 게임 시작 화면으로
+    title: "곧 시작합니다!", waiting: true,
+    big: live => `<p class="tu-lead">연습은 점수에 들어가지 않아요. 이제 진짜 <b>${esc(g.title)}</b>!</p>
+      <div class="tu-count"><b class="mono">${live.players.length}</b><span class="muted">명 참가</span></div>
+      ${live.players.length ? `<div class="tu-chips">${live.players.map(p => `<span>${esc(p.nick)}</span>`).join("")}</div>` : `<p class="muted">아직 입장한 사람이 없어요. QR로 입장해 주세요.</p>`}`,
+    phone: `<p class="tu-lead">입장 완료! 진행자가 시작하면 바로 게임이 열려요.</p>`,
   });
   return { id: g.id, title: g.title, emoji: g.emoji, steps };
 }
@@ -168,12 +171,12 @@ async function investSteps(g) {
       phone: li([`${won(START)}으로 시작, ${R}라운드`, "마지막 자산 1등이 우승"]) },
     { title: "투자할 수 있는 것", big: () => `<div class="tu-assets">${assets.map(a => `<div style="--c:${a.color}"><b>${esc(a.name)}</b><small>${esc(a.desc)}</small></div>`).join("")}</div>`,
       phone: `<div class="tu-assets sm">${assets.map(a => `<div style="--c:${a.color}"><b>${esc(a.name)}</b></div>`).join("")}</div>` },
-    { title: "한 라운드는 이렇게", big: () => `<div class="tu-flow"><div><b>📰 뉴스</b><small>진행자가 읽어 줘요. 함께 토론!</small></div><div><b>⏳ 프리장 ${PRE}초</b><small>진행자가 열면 미리 주문. 바로 본장일 수도!</small></div><div><b>📈 본장 ${MK}초</b><small>차트 보며 비율 변경</small></div><div><b>⚡ 속보</b><small>본장 ${FA}초째, 장이 ${FS}초 멈추고 토의</small></div><div><b>🧾 결과</b><small>순위 공개</small></div></div>`,
+    { title: "한 라운드는 이렇게", big: () => `<div class="tu-flow"><div><b>📰 뉴스</b><small>시간 제한 없이 함께 토의. 진행자가 넘겨요</small></div><div><b>⏳ 프리장 ${PRE}초</b><small>진행자가 열면 미리 주문. 바로 본장일 수도!</small></div><div><b>📈 본장 ${MK}초</b><small>차트 보며 비율 변경</small></div><div><b>⚡ 속보</b><small>본장 ${FA}초째, 장이 ${FS}초 멈추고 토의. 모두의 평균 투자 비율 공개</small></div><div><b>🧾 결과</b><small>순위, 찌라시 진위, 수익 1등·꼴등 인터뷰</small></div></div>`,
       phone: li(["뉴스·토의 → (프리장) → 본장(실시간) → 결과", "프리장은 진행자가 열 때만 있어요", `본장 중간에 속보가 뜨면 장이 ${FS}초 멈춰요. 이때 토의!`]) },
     { title: "슬라이더로 비율을 정해요", big: () => `${li(["종목마다 슬라이더로 <b>몇 %</b>를 넣을지 정해요 (5% 단위)", "넣지 않은 나머지는 <b>현금</b>. 라운드마다 이자 +2%", `본장에서 주문하면 슬라이더가 <b>${LOCK}초 잠겨요</b> (거래 수수료)`, "마지막 라운드는 등락 2배 <b>더블 찬스</b>"])}`,
       phone: li(["종목별 슬라이더로 비율 정하기, 나머지는 현금", `본장 주문 뒤 ${LOCK}초 잠김`, "마지막 라운드는 등락 2배"]) },
-    { title: "임삼성의 한마디는 믿거나 말거나", big: () => `${big("🧑‍💼💬")}${li(["뉴스마다 임삼성이 한마디 해요", "맞을 때도 있지만 <b>헛다리</b>일 때도 있어요", "옆 사람과 이야기해서 판단하세요. 휴대폰마다 다른 <b>비밀 찌라시</b>가 올 수도 있는데, 진짜인지 가짜인지는 결과에서 밝혀져요"])}`,
-      phone: li(["임삼성 조언은 맞을 수도, 틀릴 수도!"]) },
+    { title: "임삼성 조언과 비밀 찌라시", big: () => `${big("🧑‍💼💬")}${li(["뉴스마다 임삼성이 한마디 해요. 맞을 때도 있지만 <b>헛다리</b>일 때도 있어요", "뉴스 화면에서 <b>회장님을 믿을지 투표</b>해요. 결과 화면에서 누가 맞았는지 공개!", "휴대폰마다 다른 <b>비밀 찌라시</b>가 와요. 진짜도 가짜도 있으니 옆 사람과 맞춰 보세요"])}`,
+      phone: li(["임삼성 조언은 맞을 수도, 헛다리일 수도!", "회장님 믿음 투표에 참여해요", "내 폰에만 오는 비밀 찌라시, 진짜일까?"]) },
     { title: "연습 투자", practice: { id: "invest", phase: "play" },
       big: live => `${news}<div class="tu-live"><span class="pill">주문 ${live.docs.filter(d => d.alloc).length}명</span></div><p class="muted" style="margin:0">휴대폰 슬라이더로 비율을 정하고 '주문'을 눌러 보세요.</p>`, phone: "" },
     { title: "연습 결과", practice: { id: "invest", phase: "reveal" },
