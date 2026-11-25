@@ -1,7 +1,7 @@
 // H2맨틀 운영자 화면 (프로젝터용). 비밀 단어를 갖고 있고, 참가자 추측을 채점합니다.
 import { ROOM, GAME_ID, TITLE, ROUNDS, FEED_TOP, FEED_RECENT, FEED_EVERY_MS, DURATION_MS, EXTEND_MS, GRACE_MS, HINT_RANKS,
-  solvePoints, nearPoints, loadStyle, esc, norm, fmtSim, fmtRank, heat, ranked } from "./common.js";
-import { loadEngine, SUGGEST } from "./engine.js";
+  solvePoints, nearPoints, loadStyle, esc, norm, fmtSim, fmtRank, bar, hintFlash, ranked } from "./common.js";
+import { loadEngine, SUGGEST, PARTY_ANSWERS } from "./engine.js";
 import { ms } from "../../shared/db.js";
 import { GAMES } from "../../shared/games.js";
 import { watchWinners, pickWinner, otherGameTitle, confirmWinner, clearWinner } from "../../shared/winners.js";
@@ -160,7 +160,7 @@ export function mount(el, { db, fs }) {
     const used = (room.hints || []).length;
     if (used >= HINT_RANKS.length) return;
     const h = t.at(HINT_RANKS[used]);
-    if (h) await fs.updateDoc(roomRef, { hints: [...(room.hints || []), h] });
+    if (h) await fs.updateDoc(roomRef, { hints: [...(room.hints || []), { ...h, at: Date.now() }] });
   }
   function marksOf() {
     const arr = [...live.values()];
@@ -261,6 +261,7 @@ export function mount(el, { db, fs }) {
       <summary>비밀 단어 정하기 <span class="muted">(프로젝터에 비치지 않게 주의)</span></summary>
       <div class="sh-secret-tools">
         <button class="btn" data-act="toggleSecret">${showSecret ? "🙈 가리기" : "👀 보이기"}</button>
+        <button class="btn" data-act="party">🍝 송년회 정답으로 채우기</button>
         <button class="btn" data-act="suggest">추천 단어로 채우기</button>
       </div>
       ${rows}${prev}
@@ -313,7 +314,7 @@ export function mount(el, { db, fs }) {
       $("shMeta").innerHTML = meta();
       $("shStage").innerHTML = `
         <div class="sh-row"><div class="sh-timer" id="shTimer"></div><div class="sh-count" id="shCount"></div></div>
-        <div class="sh-hints">${(room.hints || []).map(h => `<span class="sh-hint"><small>💡 ${h.r}위 힌트</small>${esc(h.w)}<small class="mono">${fmtSim(h.s)}</small></span>`).join("")}</div>
+        <div class="sh-hints">${(room.hints || []).map(h => `<span class="sh-hint${hintFlash(h)}"><small>💡 ${h.r}위 힌트</small>${esc(h.w)}<small class="mono">${fmtSim(h.s)}</small></span>`).join("")}</div>
         <div class="sh-live" id="shLive"></div>
         ${t ? "" : secretPanel(room.round)}`;
       const hn = (room.hints || []).length;
@@ -423,18 +424,18 @@ export function mount(el, { db, fs }) {
     const solvedNames = rows.filter(p => p.solvedMs != null).map(p => `<span class="chip ok">🎉 ${esc(p.nick)} <small class="mono">${fmtTime(p.solvedMs)}</small></span>`).join("");
     box.innerHTML = `
       ${solvedNames ? `<div class="sh-solved">${solvedNames}</div>` : ""}
-      ${feed.recent[0] ? `<div class="sh-recent"><div class="muted sh-feed-h">방금 들어온 추측</div>${feedRow(feed.recent[0])}</div>` : ""}
+      ${feed.recent[0] ? `<div class="sh-recent"><div class="muted sh-feed-h">방금 들어온 추측</div><div class="sh-feed-row sh-feed-head"><span></span><span>단어</span><span>추측한 사람</span><span class="s">단어 유사도</span><span class="r">순위</span></div>${feedRow(feed.recent[0])}</div>` : ""}
       <div class="sh-feed">
-        <div class="card"><div class="muted sh-feed-h">가장 가까운 단어 1~10</div>
+        <div class="card"><div class="muted sh-feed-h">가장 가까운 단어 1~10</div><div class="sh-feed-row sh-feed-head"><span></span><span>단어</span><span>추측한 사람</span><span class="s">단어 유사도</span><span class="r">순위</span></div>
           ${feed.top.slice(0, 10).map((x, i) => feedRow(x, i + 1)).join("")}</div>
-        ${feed.top.length > 10 ? `<div class="card"><div class="muted sh-feed-h">11~20</div>
+        ${feed.top.length > 10 ? `<div class="card"><div class="muted sh-feed-h">11~20</div><div class="sh-feed-row sh-feed-head"><span></span><span>단어</span><span>추측한 사람</span><span class="s">단어 유사도</span><span class="r">순위</span></div>
           ${feed.top.slice(10, 20).map((x, i) => feedRow(x, i + 11)).join("")}</div>` : ""}
       </div>`;
   }
   function feedRow(x, i) {
     if (x.hit) return `<div class="sh-feed-row hit"><span class="i"></span><span class="w">🎉 정답!</span><span class="n">${esc(x.nick)}</span><span class="s"></span><span class="r"></span></div>`;
     return `<div class="sh-feed-row"><span class="i mono muted">${i ?? ""}</span><span class="w">${esc(x.w)}</span><span class="n">${esc(x.nick)}</span>
-      <span class="s mono">${fmtSim(x.s)}</span><span class="r"><span class="bar"><i style="width:${heat(x.r) * 100}%"></i></span><small class="mono">${fmtRank(x.r)}</small></span></div>`;
+      <span class="s mono">${fmtSim(x.s)}</span><span class="r">${bar(x.r, `${room?.round}:${x.w}`)}<small class="mono">${fmtRank(x.r)}</small></span></div>`;
   }
 
 
@@ -444,6 +445,7 @@ export function mount(el, { db, fs }) {
     try {
       if (a === "start") await startRound(0);
       else if (a === "hint") await hint();
+      else if (a === "party") { PARTY_ANSWERS().slice(0, ROUNDS).forEach((w, r) => { answers[r] = w; }); saveAnswers(answers); preview = null; process(); render(); }
       else if (a === "extend") await extend();
       else if (a === "reveal") await reveal();
       else if (a === "next") await next();
