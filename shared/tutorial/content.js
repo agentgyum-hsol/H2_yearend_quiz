@@ -18,9 +18,12 @@ export async function loadTutorial(gameId) {
   const make = { similar: similarSteps, emoji: emojiSteps, invest: investSteps }[gameId];
   const steps = make ? await make(g) : [];
   steps.push({
-    title: "준비 끝!",
-    big: () => `${big("🎉")}<p class="tu-lead">연습은 점수에 들어가지 않아요.<br>이제 진짜 <b>${esc(g.title)}</b> 시작합니다!</p>`,
-    phone: `<p class="tu-lead">연습 끝! 곧 진짜 게임이 시작돼요.</p>`,
+    // 마지막 쪽: 게임 시작 전 대기실. 입장한 사람이 실시간으로 보이고, 운영자가 넘기면 게임 시작 화면으로
+    title: "곧 시작합니다!", waiting: true,
+    big: live => `<p class="tu-lead">연습은 점수에 들어가지 않아요. 이제 진짜 <b>${esc(g.title)}</b>!</p>
+      <div class="tu-count"><b class="mono">${live.players.length}</b><span class="muted">명 참가</span></div>
+      ${live.players.length ? `<div class="tu-chips">${live.players.map(p => `<span>${esc(p.nick)}</span>`).join("")}</div>` : `<p class="muted">아직 입장한 사람이 없어요. QR로 입장해 주세요.</p>`}`,
+    phone: `<p class="tu-lead">입장 완료! 진행자가 시작하면 바로 게임이 열려요.</p>`,
   });
   return { id: g.id, title: g.title, emoji: g.emoji, steps };
 }
@@ -35,6 +38,7 @@ const chips = (names, max = 24) => names.length
 async function similarSteps(g) {
   const C = await load("../../games/similar/common.js");
   const P = await import("./similar-practice.js");
+  const S = await load("../../games/similar/practice.js");
   const ROUNDS = C.ROUNDS ?? 3, MIN = sec(C.DURATION_MS ?? 300000) / 60, CUT = C.RANK_CUTOFF ?? 1000;
   const HINTS = C.HINT_RANKS ?? [100, 30, 10], TOP = C.TOP_SIM_MIN ?? 0.8;
   const solve = C.solvePoints || (o => Math.max(50, 100 - 2 * o));
@@ -54,7 +58,9 @@ async function similarSteps(g) {
     { title: "점수와 우승", big: () => `${li([`맞히면 <b>${solve(0)}점</b>, 다음 사람부터 ${solve(0) - solve(1)}점씩 줄어 최소 ${solve(99)}점`, `못 맞혀도 가장 가까이 간 순위로 부분 점수: 10위 안 ${near(10)}점, 100위 안 ${near(100)}점, ${CUT}위 안 ${near(CUT)}점`, `${ROUNDS}라운드 합계 1등이 우승. 같으면 맞힌 라운드 수, 그다음 걸린 시간`])}`,
       phone: li([`맞히면 ${solve(0)}점부터, 빨리 맞힐수록 높아요`, "못 맞혀도 가까이 가면 부분 점수", `${ROUNDS}라운드 합계로 우승`]) },
     { title: "연습 라운드", practice: { id: "similar", phase: "play" },
-      big: live => `<p class="tu-lead">비밀 단어를 찾아보세요. <span class="muted">(점수 없음, 연말 하면 떠오르는 단어)</span></p>${similarBoard(live.docs, row, table)}`,
+      // 본 게임과 같은 화면 (games/similar/practice.js). 운영자 화면이 연습 기록을 모아 휴대폰용 모두의 추측을 씀
+      big: live => (S.practiceBig ? S.practiceBig(live.docs) : similarBoard(live.docs, row, table)),
+      sync: (docs, ctx) => S.syncPracticeFeed && S.syncPracticeFeed(docs, ctx),
       phone: "" },
     { title: "연습 정답 공개", practice: { id: "similar", phase: "reveal" },
       big: live => { const solved = byAt(live.docs.filter(d => d.solved)).map(d => d.nick);
@@ -103,9 +109,14 @@ function similarBoard(docs, row, table) {
 
 // ───────────────────────── 이모지 ─────────────────────────
 // 연습 문제는 본 게임 문제와 겹치지 않게 따로 둡니다.
-export const EMOJI_PRACTICE = { t: "속담", e: ["🐎➡️💬😊", "🐎⬅️💬😊"], a: "가는 말이 고와야 오는 말이 곱다",
-  alt: ["가는말이 고와야 오는말이 곱다", "가는 말이 고와야 오는 말도 곱다", "가는 말이 고우면 오는 말도 곱다"],
-  d: "🐎 가는 말(言)이 💬😊 고와야, 🐎 오는 말도 💬😊 곱다" };
+// 연습 문제: 유행어 "이게 제 이모지야". 정답 공개 때 원본 영상 썸네일을 보여 줍니다(못 불러오면 기본 썸네일, 그것도 안 되면 사진 없이).
+export const EMOJI_PRACTICE = { t: "유행어", e: ["👉", "🙋", "😀😎👽"], a: "이게 제 이모지야",
+  alt: ["이게 제 이모지야👽", "이게 내 이모지야", "이게 제 이모지에요", "이게 제 이모지예요"],
+  d: "👉 이게 🙋 제 😀😎👽 이모지야",
+  img: { src: "https://i.ytimg.com/vi/EGYPVaQFPrI/oardefault.jpg?sqp=-oaymwEYCJUDENAFSFqQAgHyq4qpAwcIARUAAIhC&rs=AOn4CLDDRaBMvjuiaIuYMwxhgYY23_kJdQ",
+    fallback: "https://i.ytimg.com/vi/EGYPVaQFPrI/hqdefault.jpg", credit: "사진: YouTube 영상 썸네일" } };
+const photo = img => img?.src ? `<figure class="tu-photo"><img src="${esc(img.src)}"${img.fallback ? ` data-fb="${esc(img.fallback)}"` : ""} alt="" referrerpolicy="no-referrer"
+  onerror="if(this.dataset.fb){this.src=this.dataset.fb;delete this.dataset.fb}else{this.closest('figure').remove()}">${img.credit ? `<figcaption>${esc(img.credit)}</figcaption>` : ""}</figure>` : "";
 
 async function emojiSteps(g) {
   const Q = await load("../../games/emoji/questions.js");
@@ -121,8 +132,8 @@ async function emojiSteps(g) {
       phone: li([`${N}문제, 각자 휴대폰으로 풀어요`]) },
     { title: "이렇게 풀어요", big: () => `<span class="pill">예시 · 속담</span>${emo(["⏰🌅🐦", "🐛🍽️"])}<p class="tu-lead">→ 일찍 일어나는 새가 벌레를 잡는다</p>${li(["휴대폰 입력칸에 정답을 쓰고 보내요", "<b>띄어쓰기는 상관없어요</b>. 오타 한두 글자도 봐줘요"])}`,
       phone: `<p class="tu-emoji-s">⏰🌅🐦 🐛🍽️</p><p>→ 일찍 일어나는 새가 벌레를 잡는다</p>${li(["띄어쓰기는 상관없어요"])}` },
-    { title: "문제 유형이 섞여 나와요", big: () => `<div class="tu-tags">${(types.length ? types : ["속담", "사자성어", "영화 제목", "드라마 제목"]).map(t => `<span class="pill">${esc(t)}</span>`).join("")}</div>${li(["문제 위에 <b>유형</b>이 떠요. 유형부터 보고 떠올려 보세요", "속담으로 몸풀고, 갈수록 어려워져요"])}`,
-      phone: li(["문제 위에 유형(속담, 사자성어, 영화 제목 …)이 떠요"]) },
+    { title: "문제 유형이 섞여 나와요", big: () => `<div class="tu-tags">${(types.length ? types : ["속담", "사자성어", "영화 제목", "드라마 제목"]).map(t => `<span class="pill">${esc(t)}</span>`).join("")}</div>${li(["문제 위에 <b>유형</b>이 떠요. 유형부터 보고 떠올려 보세요", "속담으로 몸풀고, 갈수록 어려워져요", "<b>어려움은 넌센스</b>! 이모지를 말장난으로 풀어야 해요"])}`,
+      phone: li(["문제 위에 유형(속담, 노래 가사, 유행어 …)이 떠요", "어려움은 넌센스, 말장난으로 풀어요"]) },
     { title: "점수", big: () => `${li(["맞히면 <b>100점</b>, 빨리 낼수록 <b>최대 50점</b> 더", "시간 절반이 지나면 <b>초성 힌트</b>가 뜨고, 그 뒤에 맞히면 기본 50점", `쉬움·보통은 ${T1}초, 어려움은 ${T3}초에 <b>점수 2배</b>`])}`,
       phone: li(["정답 100점 + 속도 보너스 최대 50점", "초성 힌트 뒤에는 기본 50점", `어려움은 ${T3}초, 점수 2배`]) },
     { title: "순위와 우승", big: () => `${li(["문제마다 정답과 순위를 보여 줘요", `마지막 <b>${HIDE}문제</b>는 순위를 가려요. 끝까지 몰라요!`, "점수가 같으면 맞힌 개수, 그다음 걸린 시간이 짧은 사람이 앞"])}`,
@@ -133,7 +144,7 @@ async function emojiSteps(g) {
       big: live => `<span class="pill">연습 · ${P.t}</span>${emo(P.e, "sm")}<p class="tu-hint">${esc(cho)}</p><p class="muted" style="margin:0">본 게임에선 시간 절반이 지나면 이렇게 떠요</p>${emojiLive(live.docs)}`, phone: "" },
     { title: "연습 정답", practice: { id: "emoji", phase: "reveal" },
       big: live => { const ok = byAt(live.docs.filter(d => d.ok)).map(d => d.nick);
-        return `<p class="tu-answer">${esc(P.a)}</p><p class="muted">${esc(P.d)}</p>${ok.length ? `<p class="tu-lead">맞힌 사람 ${ok.length}명. 가장 빨리 맞힌 사람은 <b>${esc(ok[0])}</b>님!</p>${chips(ok)}` : ""}`; },
+        return `${photo(P.img)}<p class="tu-answer">${esc(P.a)}</p><p class="muted">${esc(P.d)}</p>${ok.length ? `<p class="tu-lead">맞힌 사람 ${ok.length}명. 가장 빨리 맞힌 사람은 <b>${esc(ok[0])}</b>님!</p>${chips(ok)}` : ""}`; },
       phone: "" },
   ];
 }
@@ -164,7 +175,7 @@ async function investSteps(g) {
       phone: li([`${won(START)}으로 시작, ${R}라운드`, "마지막 자산 1등이 우승"]) },
     { title: "투자할 수 있는 것", big: () => `<div class="tu-assets">${assets.map(a => `<div style="--c:${a.color}"><b>${esc(a.name)}</b><small>${esc(a.desc)}</small></div>`).join("")}</div>`,
       phone: `<div class="tu-assets sm">${assets.map(a => `<div style="--c:${a.color}"><b>${esc(a.name)}</b></div>`).join("")}</div>` },
-    { title: "한 라운드는 이렇게", big: () => `<div class="tu-flow"><div><b>📰 뉴스</b><small>진행자가 읽어 줘요. 함께 토론!</small></div><div><b>⏳ 프리장 ${PRE}초</b><small>진행자가 열면 미리 주문. 모두 내면 ${ALLIN}초 뒤 바로 본장!</small></div><div><b>📈 본장 ${MK}초</b><small>차트 보며 비율 변경</small></div><div><b>⚡ 속보</b><small>본장 ${FA}초째, 장이 ${FS}초 멈추고 토의</small></div><div><b>🧾 결과</b><small>순위 공개</small></div></div>`,
+    { title: "한 라운드는 이렇게", big: () => `<div class="tu-flow"><div><b>📰 뉴스</b><small>시간 제한 없이 함께 토의. 진행자가 넘겨요</small></div><div><b>⏳ 프리장 ${PRE}초</b><small>진행자가 열면 미리 주문. 모두 내면 ${ALLIN}초 뒤 바로 본장!</small></div><div><b>📈 본장 ${MK}초</b><small>차트 보며 비율 변경</small></div><div><b>⚡ 속보</b><small>본장 ${FA}초째, 장이 ${FS}초 멈추고 토의. 모두의 평균 투자 비율 공개</small></div><div><b>🧾 결과</b><small>순위, 찌라시 진위, 수익 1등·꼴등 인터뷰</small></div></div>`,
       phone: li(["뉴스·토의 → (프리장) → 본장(실시간) → 결과", "프리장은 진행자가 열 때만 있어요", `본장 중간에 속보가 뜨면 장이 ${FS}초 멈춰요. 이때 토의!`]) },
     { title: "슬라이더로 비율을 정해요", big: () => `${li(["종목마다 슬라이더로 <b>몇 %</b>를 넣을지 정해요 (5% 단위)", `슬라이더에서 손 떼고 <b>${AUTO}초</b> 그대로 두면 <b>자동 주문</b>. 급하면 버튼으로 바로!`, "넣지 않은 나머지는 <b>현금</b>. 라운드마다 이자 +2%", `본장에서 주문하면 슬라이더가 <b>${LOCK}초 잠겨요</b> (거래 수수료)`, "마지막 라운드는 등락 2배 <b>더블 찬스</b>"])}`,
       phone: li(["종목별 슬라이더로 비율 정하기, 나머지는 현금", `손 떼고 ${AUTO}초 지나면 자동 주문`, `본장 주문 뒤 ${LOCK}초 잠김`, "마지막 라운드는 등락 2배"]) },

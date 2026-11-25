@@ -29,3 +29,12 @@ export function ranked(scores) {
   });
   return rows;
 }
+
+// 정답 공개 사진. img = {src, credit, fallback?}. 사진을 못 불러오면 fallback 으로 한 번 더, 그래도 안 되면 사진 자리를 지움.
+export function photoHtml(img, cls = "eh-photo") {
+  if (!img?.src) return "";
+  const fb = img.fallback ? ` data-fb="${esc(img.fallback)}"` : "";
+  return `<figure class="${cls}"><img src="${esc(img.src)}"${fb} alt="" referrerpolicy="no-referrer" decoding="async"
+    onerror="if(this.dataset.fb){this.src=this.dataset.fb;delete this.dataset.fb}else{this.closest('figure').remove()}">
+    ${img.credit ? `<figcaption>${esc(img.credit)}</figcaption>` : ""}</figure>`;
+}
