@@ -1,6 +1,6 @@
 // 이모지 퀴즈 운영자 화면 (프로젝터용)
 import { ALL, MAIN, isReserve, LVL_NAME, GRACE_MS, HIDE_LAST, durationFor, multFor, hintTime, isCorrect, similarity, CLOSE_HIDE, normalize, points, chosung } from "./questions.js";
-import { ROOM, loadStyle, esc, ranked } from "./common.js";
+import { ROOM, loadStyle, esc, ranked, photoHtml } from "./common.js";
 import { ms } from "../../shared/db.js";
 import { GAMES } from "../../shared/games.js";
 import { watchWinners, pickWinner, otherGameTitle, confirmWinner, clearWinner } from "../../shared/winners.js";
@@ -220,9 +220,14 @@ export function mount(el, { db, fs }) {
            <div class="eh-board">${ranked(scores).slice(0, 5).map(r => `<div><span class="r">${r.rank}</span><span class="n">${esc(r.nick)}</span><span class="s">${r.score}</span></div>`).join("")}</div>`;
       $("ehStage").innerHTML = `
         ${emojiHtml(q, true)}
-        <h2 class="eh-answer">${esc(q.a)}</h2>
-        <div class="eh-decode">${esc(q.d)}</div>
-        <p class="eh-mean">${esc(q.m)}</p>
+        <div class="eh-reveal${q.img ? " has-photo" : ""}">
+          ${photoHtml(q.img)}
+          <div class="eh-reveal-text">
+            <h2 class="eh-answer">${esc(q.a)}</h2>
+            <div class="eh-decode">${esc(q.d)}</div>
+            <p class="eh-mean">${esc(q.m)}</p>
+          </div>
+        </div>
         <div class="eh-split" style="width:min(1100px,100%)">
           <div class="card" style="background:var(--night)">
             <div class="muted" style="margin-bottom:6px">정답 <b class="mono" style="color:var(--pine)">${nOk}</b>명 / 제출 ${list.length}명 · 판정이 틀렸으면 O/X를 눌러 바꾸세요</div>

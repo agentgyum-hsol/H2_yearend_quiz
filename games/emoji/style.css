@@ -124,3 +124,12 @@
 .eh-wbub.many { border-color: color-mix(in srgb, var(--gold) 50%, transparent); }
 .eh-wbub.close b { text-decoration: none; color: var(--gold); }
 .eh-wbub.more { color: var(--muted); }
+
+/* 정답 공개 사진 (가수, 유행어 주인공) */
+.eh-reveal { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.eh-reveal.has-photo { flex-direction: row; gap: 28px; text-align: left; max-width: min(1100px, 100%); }
+.eh-reveal.has-photo .eh-reveal-text { display: flex; flex-direction: column; gap: 8px; }
+.eh-photo { margin: 0; flex: none; display: flex; flex-direction: column; gap: 4px; animation: eh-pop .5s cubic-bezier(.2,1.4,.4,1); }
+.eh-photo img { display: block; height: clamp(140px, 26vh, 300px); width: auto; max-width: 38vw; object-fit: cover; border-radius: 16px; border: 3px solid var(--gold); background: var(--night-2); }
+.eh-photo figcaption { font-size: .72rem; color: var(--muted); max-width: 38vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 700px) { .eh-reveal.has-photo { flex-direction: column; text-align: center; } }

@@ -103,9 +103,14 @@ function similarBoard(docs, row, table) {
 
 // ───────────────────────── 이모지 ─────────────────────────
 // 연습 문제는 본 게임 문제와 겹치지 않게 따로 둡니다.
-export const EMOJI_PRACTICE = { t: "속담", e: ["🐎➡️💬😊", "🐎⬅️💬😊"], a: "가는 말이 고와야 오는 말이 곱다",
-  alt: ["가는말이 고와야 오는말이 곱다", "가는 말이 고와야 오는 말도 곱다", "가는 말이 고우면 오는 말도 곱다"],
-  d: "🐎 가는 말(言)이 💬😊 고와야, 🐎 오는 말도 💬😊 곱다" };
+// 연습 문제: 유행어 "이게 제 이모지야". 정답 공개 때 원본 영상 썸네일을 보여 줍니다(못 불러오면 기본 썸네일, 그것도 안 되면 사진 없이).
+export const EMOJI_PRACTICE = { t: "유행어", e: ["👉", "🙋", "😀😎👽"], a: "이게 제 이모지야",
+  alt: ["이게 제 이모지야👽", "이게 내 이모지야", "이게 제 이모지에요", "이게 제 이모지예요"],
+  d: "👉 이게 🙋 제 😀😎👽 이모지야",
+  img: { src: "https://i.ytimg.com/vi/EGYPVaQFPrI/oardefault.jpg?sqp=-oaymwEYCJUDENAFSFqQAgHyq4qpAwcIARUAAIhC&rs=AOn4CLDDRaBMvjuiaIuYMwxhgYY23_kJdQ",
+    fallback: "https://i.ytimg.com/vi/EGYPVaQFPrI/hqdefault.jpg", credit: "사진: YouTube 영상 썸네일" } };
+const photo = img => img?.src ? `<figure class="tu-photo"><img src="${esc(img.src)}"${img.fallback ? ` data-fb="${esc(img.fallback)}"` : ""} alt="" referrerpolicy="no-referrer"
+  onerror="if(this.dataset.fb){this.src=this.dataset.fb;delete this.dataset.fb}else{this.closest('figure').remove()}">${img.credit ? `<figcaption>${esc(img.credit)}</figcaption>` : ""}</figure>` : "";
 
 async function emojiSteps(g) {
   const Q = await load("../../games/emoji/questions.js");
@@ -121,8 +126,8 @@ async function emojiSteps(g) {
       phone: li([`${N}문제, 각자 휴대폰으로 풀어요`]) },
     { title: "이렇게 풀어요", big: () => `<span class="pill">예시 · 속담</span>${emo(["⏰🌅🐦", "🐛🍽️"])}<p class="tu-lead">→ 일찍 일어나는 새가 벌레를 잡는다</p>${li(["휴대폰 입력칸에 정답을 쓰고 보내요", "<b>띄어쓰기는 상관없어요</b>. 오타 한두 글자도 봐줘요"])}`,
       phone: `<p class="tu-emoji-s">⏰🌅🐦 🐛🍽️</p><p>→ 일찍 일어나는 새가 벌레를 잡는다</p>${li(["띄어쓰기는 상관없어요"])}` },
-    { title: "문제 유형이 섞여 나와요", big: () => `<div class="tu-tags">${(types.length ? types : ["속담", "사자성어", "영화 제목", "드라마 제목"]).map(t => `<span class="pill">${esc(t)}</span>`).join("")}</div>${li(["문제 위에 <b>유형</b>이 떠요. 유형부터 보고 떠올려 보세요", "속담으로 몸풀고, 갈수록 어려워져요"])}`,
-      phone: li(["문제 위에 유형(속담, 사자성어, 영화 제목 …)이 떠요"]) },
+    { title: "문제 유형이 섞여 나와요", big: () => `<div class="tu-tags">${(types.length ? types : ["속담", "사자성어", "영화 제목", "드라마 제목"]).map(t => `<span class="pill">${esc(t)}</span>`).join("")}</div>${li(["문제 위에 <b>유형</b>이 떠요. 유형부터 보고 떠올려 보세요", "속담으로 몸풀고, 갈수록 어려워져요", "<b>어려움은 넌센스</b>! 이모지를 말장난으로 풀어야 해요"])}`,
+      phone: li(["문제 위에 유형(속담, 노래 가사, 유행어 …)이 떠요", "어려움은 넌센스, 말장난으로 풀어요"]) },
     { title: "점수", big: () => `${li(["맞히면 <b>100점</b>, 빨리 낼수록 <b>최대 50점</b> 더", "시간 절반이 지나면 <b>초성 힌트</b>가 뜨고, 그 뒤에 맞히면 기본 50점", `쉬움·보통은 ${T1}초, 어려움은 ${T3}초에 <b>점수 2배</b>`])}`,
       phone: li(["정답 100점 + 속도 보너스 최대 50점", "초성 힌트 뒤에는 기본 50점", `어려움은 ${T3}초, 점수 2배`]) },
     { title: "순위와 우승", big: () => `${li(["문제마다 정답과 순위를 보여 줘요", `마지막 <b>${HIDE}문제</b>는 순위를 가려요. 끝까지 몰라요!`, "점수가 같으면 맞힌 개수, 그다음 걸린 시간이 짧은 사람이 앞"])}`,
@@ -133,7 +138,7 @@ async function emojiSteps(g) {
       big: live => `<span class="pill">연습 · ${P.t}</span>${emo(P.e, "sm")}<p class="tu-hint">${esc(cho)}</p><p class="muted" style="margin:0">본 게임에선 시간 절반이 지나면 이렇게 떠요</p>${emojiLive(live.docs)}`, phone: "" },
     { title: "연습 정답", practice: { id: "emoji", phase: "reveal" },
       big: live => { const ok = byAt(live.docs.filter(d => d.ok)).map(d => d.nick);
-        return `<p class="tu-answer">${esc(P.a)}</p><p class="muted">${esc(P.d)}</p>${ok.length ? `<p class="tu-lead">맞힌 사람 ${ok.length}명. 가장 빨리 맞힌 사람은 <b>${esc(ok[0])}</b>님!</p>${chips(ok)}` : ""}`; },
+        return `${photo(P.img)}<p class="tu-answer">${esc(P.a)}</p><p class="muted">${esc(P.d)}</p>${ok.length ? `<p class="tu-lead">맞힌 사람 ${ok.length}명. 가장 빨리 맞힌 사람은 <b>${esc(ok[0])}</b>님!</p>${chips(ok)}` : ""}`; },
       phone: "" },
   ];
 }
