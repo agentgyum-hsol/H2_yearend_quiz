@@ -84,3 +84,8 @@ body.tu-open { overflow: hidden; }
 .tu-sliders b { text-align: right; }
 .tu-cash { margin: 0; }
 .tu-ph-foot { margin: auto 0 0; text-align: center; font-size: .85rem; }
+
+/* 이모지 연습 정답 사진 */
+.tu-photo { margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.tu-photo img { display: block; height: clamp(140px, 30vh, 320px); width: auto; max-width: 80vw; object-fit: cover; border-radius: 16px; border: 3px solid var(--gold); }
+.tu-photo figcaption { font-size: .72rem; color: var(--muted); }

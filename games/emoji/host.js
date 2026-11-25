@@ -1,6 +1,6 @@
 // 이모지 퀴즈 운영자 화면 (프로젝터용)
 import { ALL, MAIN, isReserve, LVL_NAME, GRACE_MS, HIDE_LAST, durationFor, multFor, hintTime, isCorrect, similarity, CLOSE_HIDE, normalize, points, chosung } from "./questions.js";
-import { ROOM, loadStyle, esc, ranked } from "./common.js";
+import { ROOM, loadStyle, esc, ranked, photoHtml } from "./common.js";
 import { ms } from "../../shared/db.js";
 import { GAMES } from "../../shared/games.js";
 import { watchWinners, pickWinner, otherGameTitle, confirmWinner, clearWinner } from "../../shared/winners.js";
@@ -178,7 +178,7 @@ export function mount(el, { db, fs }) {
         <h1 class="eh-title">이게 제 <span>이모지</span>야👽</h1>
         <ul class="rules eh-mean">
           <li>이모지를 보고 정답을 휴대폰에 써 주세요. 1인 1폰, 각자 풀기!</li>
-          <li>속담으로 몸풀고, 사자성어·영화/드라마 제목·직장인 말이 섞여 나와요. 문제마다 <b>유형</b>을 알려 드려요</li>
+          <li>속담으로 몸풀고, 사자성어·노래 가사·유행어·드라마 제목이 섞여 나와요. 어려움은 <b>넌센스</b>! 문제마다 <b>유형</b>을 알려 드려요</li>
           <li>맞히면 <b>100점</b>, 빨리 낼수록 <b>최대 50점</b> 더</li>
           <li>시간 절반이 지나면 <b>초성 힌트</b>, 그 뒤에 내면 기본 50점</li>
           <li>어려움 문제는 <b>점수 2배</b>, 제한 시간 40초</li>
@@ -220,9 +220,14 @@ export function mount(el, { db, fs }) {
            <div class="eh-board">${ranked(scores).slice(0, 5).map(r => `<div><span class="r">${r.rank}</span><span class="n">${esc(r.nick)}</span><span class="s">${r.score}</span></div>`).join("")}</div>`;
       $("ehStage").innerHTML = `
         ${emojiHtml(q, true)}
-        <h2 class="eh-answer">${esc(q.a)}</h2>
-        <div class="eh-decode">${esc(q.d)}</div>
-        <p class="eh-mean">${esc(q.m)}</p>
+        <div class="eh-reveal${q.img ? " has-photo" : ""}">
+          ${photoHtml(q.img)}
+          <div class="eh-reveal-text">
+            <h2 class="eh-answer">${esc(q.a)}</h2>
+            <div class="eh-decode">${esc(q.d)}</div>
+            <p class="eh-mean">${esc(q.m)}</p>
+          </div>
+        </div>
         <div class="eh-split" style="width:min(1100px,100%)">
           <div class="card" style="background:var(--night)">
             <div class="muted" style="margin-bottom:6px">정답 <b class="mono" style="color:var(--pine)">${nOk}</b>명 / 제출 ${list.length}명 · 판정이 틀렸으면 O/X를 눌러 바꾸세요</div>
